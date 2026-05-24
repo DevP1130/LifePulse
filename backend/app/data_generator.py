@@ -1,64 +1,138 @@
 """
-Synthetic transaction data generator for LifePulse.
+Synthetic transaction data generator for LifePulse — Relocation Intelligence.
 
-Generates 90 days of realistic customer transaction histories with
-life-event signals embedded in the most recent 30-45 days.
+Produces 12 customers, each mid-relocation, with realistic 90-day transaction
+histories and embedded relocation signal patterns (trucks, storage, USPS,
+new-city utilities, furniture, temp housing, new-market merchants).
 """
 
-import random
 import uuid
+import random
 from datetime import date, timedelta
 from typing import List, Tuple
 
 from app.models import (
     CustomerDetail,
-    EventType,
-    LifeEvent,
-    Severity,
+    RelocationEvent,
+    RelocationSignal,
+    RelocationStatus,
     Transaction,
     TransactionType,
 )
 
-# Fixed seed for reproducible demo data
 _RNG = random.Random(42)
-
 TODAY = date(2026, 5, 24)
 HISTORY_DAYS = 90
-EVENT_WINDOW_DAYS = 38  # how far back events start appearing
 
 
-# ── Merchant catalogs ─────────────────────────────────────────────────────────
-# Each entry: (merchant_name, category, min_amount, max_amount, weekly_frequency)
+# ── New-city utility companies (realistic, city-specific) ─────────────────────
+
+UTILITIES_BY_CITY: dict[str, List[Tuple[str, str]]] = {
+    "Austin, TX":      [("CPS Energy — New Account",         "Utilities"), ("Atmos Energy — New Service", "Utilities")],
+    "Charlotte, NC":   [("Duke Energy Progress — New Acct",  "Utilities"), ("Piedmont Natural Gas",        "Utilities")],
+    "Denver, CO":      [("Xcel Energy — New Account",        "Utilities"), ("Black Hills Energy",          "Utilities")],
+    "Miami, FL":       [("FPL — Florida Power & Light",      "Utilities"), ("TECO Peoples Gas — New Acct", "Utilities")],
+    "Nashville, TN":   [("NES — Nashville Electric",         "Utilities"), ("Nashville Gas Co — New Acct", "Utilities")],
+    "Portland, OR":    [("Portland General Electric",        "Utilities"), ("NW Natural Gas — New Acct",   "Utilities")],
+    "Chicago, IL":     [("ComEd — New Account",              "Utilities"), ("Peoples Gas — New Account",   "Utilities")],
+    "Phoenix, AZ":     [("APS — Arizona Public Service",     "Utilities"), ("Southwest Gas — New Acct",    "Utilities")],
+    "Dallas, TX":      [("Oncor Electric — New Account",     "Utilities"), ("Atmos Energy — New Service",  "Utilities")],
+    "Las Vegas, NV":   [("NV Energy — New Account",          "Utilities"), ("Southwest Gas — New Acct",    "Utilities")],
+    "Tampa, FL":       [("TECO Energy — Tampa Electric",     "Utilities"), ("Peoples Gas — New Account",   "Utilities")],
+    "Scottsdale, AZ":  [("APS — Arizona Public Service",     "Utilities"), ("Southwest Gas — New Acct",    "Utilities")],
+}
+
+# ── Signal catalog: (signal_type, label, merchant, lo_amt, hi_amt, description_tmpl) ──
+
+SIGNAL_TEMPLATES: dict[str, Tuple[str, str, float, float, str]] = {
+    "TRUCK_RENTAL": (
+        "Moving Truck Rental",
+        "Moving Truck",
+        650, 1_450,
+        "Moving truck rental — strong indicator of imminent or in-progress relocation",
+    ),
+    "STORAGE_UNIT": (
+        "Storage Unit",
+        "Storage Rental",
+        119, 229,
+        "Storage unit rental — suggests transitional housing or staging for a move",
+    ),
+    "ADDRESS_CHANGE": (
+        "Address Change Service",
+        "Mail Forwarding",
+        1.10, 1.10,
+        "USPS mail forwarding activated — official address change request confirmed",
+    ),
+    "SHIPPING_SERVICE": (
+        "Packing & Shipping",
+        "Shipping Service",
+        38, 140,
+        "UPS/FedEx bulk shipment — multiple packages forwarded to new address",
+    ),
+    "NEW_UTILITY": (
+        "New Utility Setup",
+        "New-City Utility",
+        45, 165,
+        "New utility account activated in destination city — near-certain relocation signal",
+    ),
+    "TEMP_HOUSING": (
+        "Temporary Housing",
+        "Temp Housing",
+        680, 2_400,
+        "Extended-stay hotel or short-term rental — indicates active relocation in progress",
+    ),
+    "FURNITURE": (
+        "Furniture & Home Goods",
+        "Furniture",
+        240, 2_100,
+        "Significant home furnishing purchase — consistent with setting up a new residence",
+    ),
+    "NEW_CITY_MERCHANT": (
+        "New-Market Activity",
+        "New-Market Txn",
+        12, 180,
+        "Transaction at merchant located in destination market — geographic shift confirmed",
+    ),
+}
+
+# Merchants for each signal type
+SIGNAL_MERCHANTS: dict[str, List[str]] = {
+    "TRUCK_RENTAL":       ["U-Haul Truck Rental", "Penske Truck Rental", "Budget Truck Rental", "PODS Moving & Storage"],
+    "STORAGE_UNIT":       ["Public Storage", "CubeSmart Self Storage", "Extra Space Storage", "Life Storage"],
+    "ADDRESS_CHANGE":     ["USPS.com — Address Change", "USPS — Priority Mail Forward"],
+    "SHIPPING_SERVICE":   ["The UPS Store", "FedEx Office Print & Ship", "USPS Priority Mail"],
+    "NEW_UTILITY":        [],  # populated per-customer from UTILITIES_BY_CITY
+    "TEMP_HOUSING":       ["Extended Stay America", "Marriott Residence Inn", "Airbnb — Austin TX", "Hilton Garden Inn"],
+    "FURNITURE":          ["IKEA", "Wayfair", "West Elm", "HomeGoods", "Ashley HomeStore", "Crate & Barrel"],
+    "NEW_CITY_MERCHANT":  [],  # will use city-specific gas/grocery in build logic
+}
+
+# ── Everyday merchant catalog ─────────────────────────────────────────────────
+# (name, category, lo, hi, weekly_freq)
 
 EVERYDAY: List[Tuple[str, str, float, float, float]] = [
-    ("Whole Foods Market",    "Grocery",      45,  130, 1.5),
-    ("Trader Joe's",          "Grocery",      35,   90, 1.0),
-    ("Safeway",               "Grocery",      40,  110, 0.8),
-    ("Chipotle Mexican Grill","Restaurant",   12,   18, 1.2),
-    ("Starbucks",             "Restaurant",    5,   14, 2.5),
-    ("Panera Bread",          "Restaurant",   11,   20, 0.8),
-    ("DoorDash",              "Restaurant",   25,   55, 1.0),
-    ("Uber Eats",             "Restaurant",   22,   50, 0.7),
-    ("Shell",                 "Gas & Auto",   45,   85, 1.0),
-    ("Chevron",               "Gas & Auto",   44,   82, 0.7),
-    ("Amazon",                "Retail",       25,  200, 1.5),
-    ("Target",                "Retail",       30,  120, 0.8),
-    ("CVS Pharmacy",          "Pharmacy",     12,   60, 0.7),
-    ("Walgreens",             "Pharmacy",     10,   55, 0.5),
+    ("Whole Foods Market",     "Grocery",      45,  130, 1.5),
+    ("Trader Joe's",           "Grocery",      35,   90, 1.0),
+    ("Chipotle Mexican Grill", "Restaurant",   12,   18, 1.2),
+    ("Starbucks",              "Restaurant",    5,   14, 2.5),
+    ("DoorDash",               "Restaurant",   22,   52, 0.9),
+    ("Shell",                  "Gas & Auto",   44,   82, 1.0),
+    ("Amazon",                 "Retail",       25,  200, 1.4),
+    ("Target",                 "Retail",       30,  120, 0.8),
+    ("CVS Pharmacy",           "Pharmacy",     12,   58, 0.6),
 ]
 
-# Monthly recurring charges — generated once per month
-MONTHLY_SUBSCRIPTIONS: List[Tuple[str, str, float]] = [
-    ("Netflix",            "Streaming",  15.49),
-    ("Spotify",            "Streaming",   9.99),
-    ("Verizon Wireless",   "Utilities",  85.00),
-    ("Planet Fitness",     "Health",     10.00),
+MONTHLY_SUBS: List[Tuple[str, str, float]] = [
+    ("Netflix",          "Streaming", 15.49),
+    ("Spotify",          "Streaming",  9.99),
+    ("Verizon Wireless", "Utilities", 85.00),
+    ("Planet Fitness",   "Health",    10.00),
 ]
 
 MONTHLY_UTILITIES: List[Tuple[str, str, float, float]] = [
-    ("ConEdison Electric", "Utilities",  80, 180),
-    ("National Grid Gas",  "Utilities",  40, 120),
-    ("Comcast Xfinity",    "Utilities",  85, 120),
+    ("ConEdison Electric", "Utilities",  80, 175),
+    ("National Grid Gas",  "Utilities",  38, 115),
+    ("Comcast Xfinity",    "Utilities",  82, 118),
 ]
 
 SALARY_EMPLOYERS = [
@@ -69,291 +143,285 @@ SALARY_EMPLOYERS = [
     "JPMorgan Chase Bank",
     "Salesforce Inc.",
     "Microsoft Corporation",
-    "Northrop Grumman",
     "Kaiser Permanente",
-    "Lockheed Martin Corp.",
 ]
 
-# ── Event-specific merchant signals ──────────────────────────────────────────
-# Each entry: (merchant_name, category, min_amount, max_amount)
-
-EVENT_SIGNALS: dict[EventType, List[Tuple[str, str, float, float]]] = {
-    EventType.RELOCATION: [
-        ("U-Haul Truck Rental",          "Moving & Storage",  650, 1_400),
-        ("PODS Moving & Storage",         "Moving & Storage",  800, 1_600),
-        ("Public Storage",                "Moving & Storage",  120,   220),
-        ("IKEA",                          "Furniture",         350, 1_800),
-        ("Wayfair",                       "Furniture",         200, 1_200),
-        ("Ashley Furniture",              "Furniture",         400, 2_000),
-        ("ConEdison Electric - New Acct", "Utilities",          90,   150),
-        ("National Grid - New Service",   "Utilities",          50,   110),
-        ("Comcast Xfinity - New Install", "Utilities",          85,   150),
-    ],
-    EventType.NEW_BABY: [
-        ("Buy Buy Baby",             "Baby & Kids",   250,   800),
-        ("Carter's",                 "Baby & Kids",    80,   250),
-        ("Pottery Barn Kids",        "Baby & Kids",   350,   900),
-        ("OB/GYN Specialists",       "Medical",       200,   500),
-        ("Prenatal Care Center",     "Medical",       150,   400),
-        ("Pediatric Associates",     "Medical",        80,   200),
-        ("Motherhood Maternity",     "Baby & Kids",   100,   350),
-        ("Amazon Baby Registry",     "Baby & Kids",   200,   600),
-    ],
-    EventType.HOME_PURCHASE: [
-        ("Title Insurance Co.",          "Real Estate",   900, 1_800),
-        ("Home Inspection Services LLC", "Real Estate",   400,   650),
-        ("Escrow Services Inc.",         "Real Estate",   500, 1_200),
-        ("Home Depot",                   "Home Improvement", 150,   800),
-        ("Lowe's Home Improvement",      "Home Improvement", 120,   600),
-        ("Floor & Decor",                "Home Improvement", 200, 1_000),
-        ("Ace Hardware",                 "Home Improvement",  40,   200),
-    ],
-    EventType.JOB_CHANGE: [
-        ("LinkedIn Premium",          "Professional",   39.99,  39.99),
-        ("ZipRecruiter Pro",          "Professional",   24.99,  24.99),
-        ("Men's Wearhouse",           "Clothing",       200,    600),
-        ("J.Crew",                    "Clothing",       150,    400),
-        ("Career Coach Services",     "Professional",   150,    300),
-    ],
-    EventType.FINANCIAL_STRESS: [
-        ("Overdraft Fee - Capital One",   "Bank Fee",   35,  35),
-        ("NSF Fee - Capital One",         "Bank Fee",   35,  35),
-        ("Late Fee - Verizon Wireless",   "Bank Fee",   10,  10),
-        ("Late Payment Fee - Electric",   "Bank Fee",   15,  15),
-        ("ACE Cash Express",              "Payday Loan", 200, 500),
-        ("Check Into Cash",               "Payday Loan", 150, 400),
-    ],
-    EventType.MARRIAGE: [
-        ("The Grand Ballroom Events",    "Wedding",    2_500, 6_000),
-        ("David's Bridal",               "Wedding",      800, 2_200),
-        ("Kay Jewelers",                 "Jewelry",    2_500, 8_000),
-        ("Zola Wedding Registry",        "Wedding",      200,   800),
-        ("United Airlines",              "Travel",       400, 1_200),
-        ("Paradise Island Resorts",      "Travel",     1_800, 4_500),
-        ("Wedding Photography by JL",    "Wedding",    1_800, 3_500),
-    ],
-    EventType.DIVORCE: [
-        ("Family Law Associates",    "Legal",    1_500, 4_500),
-        ("Mediation Services LLC",   "Legal",      800, 2_000),
-        ("LegalZoom",                "Legal",      200,   500),
-        ("New Apartment Deposit",    "Housing",  1_500, 3_000),
-        ("IKEA",                     "Furniture",  300, 1_200),
-        ("U-Haul Truck Rental",      "Moving & Storage", 250, 650),
-    ],
-}
-
-# ── Customer seed profiles ────────────────────────────────────────────────────
+# ── Customer seed definitions ─────────────────────────────────────────────────
 
 CUSTOMER_SEEDS = [
     {
         "name": "Alice Chen",
         "age": 31,
-        "location": "San Francisco, CA",
+        "origin_city": "San Francisco, CA",
+        "destination_city": "Austin, TX",
         "rm": "Morgan Hayes",
-        "event_type": EventType.RELOCATION,
         "confidence": 0.91,
-        "salary": 6_800,
+        "churn_risk": 0.76,
+        "status": RelocationStatus.ACTIVE,
         "tenure_years": 3,
-        "signal_indices": [0, 1, 2, 3, 7],   # which EVENT_SIGNALS entries to use
+        "days_since_first_signal": 12,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "ADDRESS_CHANGE", "NEW_UTILITY", "FURNITURE"],
     },
     {
         "name": "Marcus Johnson",
         "age": 29,
-        "location": "Atlanta, GA",
+        "origin_city": "Atlanta, GA",
+        "destination_city": "Charlotte, NC",
         "rm": "Chris Delano",
-        "event_type": EventType.NEW_BABY,
-        "confidence": 0.87,
-        "salary": 5_400,
+        "confidence": 0.72,
+        "churn_risk": 0.58,
+        "status": RelocationStatus.NEW,
         "tenure_years": 2,
-        "signal_indices": [0, 1, 3, 4, 5],
+        "days_since_first_signal": 8,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "SHIPPING_SERVICE"],
     },
     {
         "name": "Sarah Williams",
         "age": 34,
-        "location": "Austin, TX",
+        "origin_city": "Austin, TX",
+        "destination_city": "Denver, CO",
         "rm": "Morgan Hayes",
-        "event_type": EventType.HOME_PURCHASE,
-        "confidence": 0.94,
-        "salary": 8_200,
+        "confidence": 0.64,
+        "churn_risk": 0.44,
+        "status": RelocationStatus.NEW,
         "tenure_years": 5,
-        "signal_indices": [0, 1, 2, 3, 4],
+        "days_since_first_signal": 3,
+        "signal_types": ["TRUCK_RENTAL", "ADDRESS_CHANGE"],
     },
     {
         "name": "David Rodriguez",
         "age": 27,
-        "location": "New York, NY",
+        "origin_city": "New York, NY",
+        "destination_city": "Miami, FL",
         "rm": "Taylor Brooks",
-        "event_type": EventType.JOB_CHANGE,
-        "confidence": 0.78,
-        "salary": 7_100,
+        "confidence": 0.89,
+        "churn_risk": 0.34,
+        "status": RelocationStatus.CONTACTED,
         "tenure_years": 1,
-        "signal_indices": [0, 1, 2],
+        "days_since_first_signal": 22,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "ADDRESS_CHANGE", "NEW_UTILITY", "TEMP_HOUSING", "FURNITURE"],
     },
     {
         "name": "Emily Thompson",
         "age": 26,
-        "location": "Chicago, IL",
+        "origin_city": "Chicago, IL",
+        "destination_city": "Nashville, TN",
         "rm": "Chris Delano",
-        "event_type": EventType.FINANCIAL_STRESS,
-        "confidence": 0.85,
-        "salary": 3_800,
+        "confidence": 0.83,
+        "churn_risk": 0.71,
+        "status": RelocationStatus.ACTIVE,
         "tenure_years": 2,
-        "signal_indices": [0, 1, 2, 3, 4],
+        "days_since_first_signal": 15,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "SHIPPING_SERVICE", "NEW_UTILITY", "FURNITURE"],
     },
     {
         "name": "James Park",
         "age": 32,
-        "location": "Seattle, WA",
+        "origin_city": "Seattle, WA",
+        "destination_city": "Portland, OR",
         "rm": "Taylor Brooks",
-        "event_type": EventType.MARRIAGE,
-        "confidence": 0.96,
-        "salary": 9_500,
+        "confidence": 0.58,
+        "churn_risk": 0.38,
+        "status": RelocationStatus.NEW,
         "tenure_years": 4,
-        "signal_indices": [0, 1, 2, 3, 4, 5, 6],
+        "days_since_first_signal": 5,
+        "signal_types": ["STORAGE_UNIT", "SHIPPING_SERVICE"],
     },
     {
         "name": "Priya Patel",
         "age": 38,
-        "location": "Boston, MA",
+        "origin_city": "Boston, MA",
+        "destination_city": "Chicago, IL",
         "rm": "Morgan Hayes",
-        "event_type": EventType.DIVORCE,
-        "confidence": 0.82,
-        "salary": 7_600,
+        "confidence": 0.71,
+        "churn_risk": 0.52,
+        "status": RelocationStatus.NEW,
         "tenure_years": 6,
-        "signal_indices": [0, 1, 2, 3],
+        "days_since_first_signal": 7,
+        "signal_types": ["TRUCK_RENTAL", "ADDRESS_CHANGE", "STORAGE_UNIT"],
     },
     {
         "name": "Robert Kim",
         "age": 44,
-        "location": "Denver, CO",
+        "origin_city": "Denver, CO",
+        "destination_city": "Phoenix, AZ",
         "rm": "Jordan Mitchell",
-        "event_type": EventType.RELOCATION,
-        "confidence": 0.89,
-        "salary": 10_200,
+        "confidence": 0.94,
+        "churn_risk": 0.28,
+        "status": RelocationStatus.CONTACTED,
         "tenure_years": 8,
-        "signal_indices": [0, 2, 3, 6, 7],
+        "days_since_first_signal": 30,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "ADDRESS_CHANGE", "NEW_UTILITY", "TEMP_HOUSING", "FURNITURE", "NEW_CITY_MERCHANT"],
     },
     {
         "name": "Jennifer Adams",
         "age": 33,
-        "location": "Houston, TX",
+        "origin_city": "Houston, TX",
+        "destination_city": "Dallas, TX",
         "rm": "Jordan Mitchell",
-        "event_type": EventType.NEW_BABY,
-        "confidence": 0.93,
-        "salary": 6_300,
+        "confidence": 0.78,
+        "churn_risk": 0.64,
+        "status": RelocationStatus.ACTIVE,
         "tenure_years": 4,
-        "signal_indices": [0, 1, 2, 3, 4, 6],
+        "days_since_first_signal": 18,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "NEW_UTILITY", "FURNITURE"],
     },
     {
         "name": "Michael Torres",
         "age": 41,
-        "location": "Los Angeles, CA",
+        "origin_city": "Los Angeles, CA",
+        "destination_city": "Las Vegas, NV",
         "rm": "Taylor Brooks",
-        "event_type": EventType.JOB_CHANGE,
-        "confidence": 0.76,
-        "salary": 8_800,
+        "confidence": 0.86,
+        "churn_risk": 0.67,
+        "status": RelocationStatus.ACTIVE,
         "tenure_years": 7,
-        "signal_indices": [0, 1, 3],
+        "days_since_first_signal": 25,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "ADDRESS_CHANGE", "NEW_UTILITY", "TEMP_HOUSING", "FURNITURE"],
     },
     {
         "name": "Lisa Zhang",
         "age": 35,
-        "location": "Miami, FL",
+        "origin_city": "Miami, FL",
+        "destination_city": "Tampa, FL",
         "rm": "Chris Delano",
-        "event_type": EventType.FINANCIAL_STRESS,
-        "confidence": 0.92,
-        "salary": 4_100,
+        "confidence": 0.67,
+        "churn_risk": 0.49,
+        "status": RelocationStatus.NEW,
         "tenure_years": 3,
-        "signal_indices": [0, 1, 2, 3, 4, 5],
+        "days_since_first_signal": 10,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "SHIPPING_SERVICE"],
     },
     {
         "name": "Daniel Brown",
         "age": 48,
-        "location": "Phoenix, AZ",
+        "origin_city": "Phoenix, AZ",
+        "destination_city": "Scottsdale, AZ",
         "rm": "Jordan Mitchell",
-        "event_type": EventType.HOME_PURCHASE,
-        "confidence": 0.88,
-        "salary": 12_400,
+        "confidence": 0.92,
+        "churn_risk": 0.12,
+        "status": RelocationStatus.RESOLVED,
         "tenure_years": 11,
-        "signal_indices": [0, 1, 2, 3, 5, 6],
+        "days_since_first_signal": 35,
+        "signal_types": ["TRUCK_RENTAL", "STORAGE_UNIT", "ADDRESS_CHANGE", "NEW_UTILITY", "FURNITURE", "NEW_CITY_MERCHANT"],
     },
 ]
 
 
-# ── Helper utilities ──────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _acct_number(seed_str: str) -> str:
-    h = 0
-    for ch in seed_str:
-        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
-    return f"****{abs(h) % 10000:04d}"
-
-
-def _round2(v: float) -> float:
+def _r2(v: float) -> float:
     return round(v, 2)
 
 
-def _jitter(val: float, pct: float = 0.15) -> float:
-    return _round2(val * (1 + _RNG.uniform(-pct, pct)))
+def _acct(name: str) -> str:
+    h = sum(ord(c) * (i + 31) for i, c in enumerate(name)) & 0xFFFFFFFF
+    return f"****{abs(h) % 10_000:04d}"
 
 
-def _pick_date(start: date, end: date) -> date:
-    delta = (end - start).days
-    return start + timedelta(days=_RNG.randint(0, max(delta, 0)))
+def _new_city_merchant(dest: str) -> Tuple[str, str]:
+    city = dest.split(",")[0]
+    options = [
+        (f"Shell — {city}", "Gas & Auto"),
+        (f"Kroger — {city}", "Grocery"),
+        (f"HEB — {city}", "Grocery"),
+        (f"Safeway — {city}", "Grocery"),
+        (f"Walgreens — {city}", "Pharmacy"),
+    ]
+    return _RNG.choice(options)
 
 
-def _severity(confidence: float) -> Severity:
-    if confidence >= 0.88:
-        return Severity.HIGH
-    if confidence >= 0.78:
-        return Severity.MEDIUM
-    return Severity.LOW
+def _build_signals(
+    seed: dict,
+    history_start: date,
+) -> List[RelocationSignal]:
+    signal_types = seed["signal_types"]
+    days_first = seed["days_since_first_signal"]
+    dest = seed["destination_city"]
+    first_date = TODAY - timedelta(days=days_first)
+    n = len(signal_types)
+
+    signals: List[RelocationSignal] = []
+    for idx, stype in enumerate(signal_types):
+        # spread signals from first_date → yesterday
+        day_offset = int((idx / max(n - 1, 1)) * (days_first - 1))
+        sig_date = first_date + timedelta(days=day_offset)
+        if sig_date >= TODAY:
+            sig_date = TODAY - timedelta(days=1)
+
+        label, cat_label, lo, hi, desc_tmpl = SIGNAL_TEMPLATES[stype]
+
+        if stype == "NEW_UTILITY":
+            city_utils = UTILITIES_BY_CITY.get(dest, [("New Utility Provider", "Utilities")])
+            merchant, _ = _RNG.choice(city_utils)
+            desc = f"New utility account activated in {dest} — near-certain relocation signal"
+        elif stype == "NEW_CITY_MERCHANT":
+            merchant, _ = _new_city_merchant(dest)
+            desc = f"Transaction at merchant located in {dest} market — geographic shift detected"
+        elif stype == "ADDRESS_CHANGE":
+            merchant = _RNG.choice(SIGNAL_MERCHANTS["ADDRESS_CHANGE"])
+            desc = desc_tmpl
+            lo = hi = 1.10
+        else:
+            merchant = _RNG.choice(SIGNAL_MERCHANTS[stype])
+            desc = desc_tmpl
+
+        amount = _r2(_RNG.uniform(lo, hi))
+        signals.append(RelocationSignal(
+            id=str(uuid.uuid4()),
+            signal_type=stype,
+            label=label,
+            merchant=merchant,
+            detected_date=sig_date,
+            amount=amount,
+            description=desc,
+        ))
+
+    return sorted(signals, key=lambda s: s.detected_date)
 
 
-# ── Core generation ───────────────────────────────────────────────────────────
-
-def _generate_everyday_transactions(start: date, end: date, stress: bool = False) -> List[Transaction]:
-    """Daily-frequency everyday spending for the given date range."""
+def _build_transactions(
+    seed: dict,
+    signals: List[RelocationSignal],
+) -> List[Transaction]:
+    history_start = TODAY - timedelta(days=HISTORY_DAYS)
     txns: List[Transaction] = []
-    current = start
-
-    # Spread subscriptions across month 1 on fixed days
-    sub_day_offset = 0
+    current = history_start
     subs_added: set[str] = set()
 
-    while current <= end:
-        # Salary credit — on the 1st and 15th
+    while current <= TODAY:
+        # Bi-monthly salary
         if current.day in (1, 15):
             employer = _RNG.choice(SALARY_EMPLOYERS)
-            salary_amount = _RNG.uniform(2_400, 3_200) if not stress else _RNG.uniform(1_600, 2_000)
             txns.append(Transaction(
                 id=str(uuid.uuid4()),
                 date=current,
                 merchant=f"Direct Deposit — {employer}",
                 category="Income",
-                amount=_round2(salary_amount),
+                amount=_r2(_RNG.uniform(2_600, 4_200)),
                 transaction_type=TransactionType.CREDIT,
             ))
 
-        # Monthly recurring bills — around 5th–10th
-        if 5 <= current.day <= 10:
+        # Monthly utilities (5th–9th)
+        if 5 <= current.day <= 9:
             for name, cat, lo, hi in MONTHLY_UTILITIES:
-                if f"{name}-{current.month}-{current.year}" not in subs_added:
-                    amount = _round2(_RNG.uniform(lo, hi) * (0.7 if stress else 1.0))
+                key = f"{name}-{current.month}-{current.year}"
+                if key not in subs_added:
                     txns.append(Transaction(
                         id=str(uuid.uuid4()),
                         date=current,
                         merchant=name,
                         category=cat,
-                        amount=amount,
+                        amount=_r2(_RNG.uniform(lo, hi)),
                         transaction_type=TransactionType.DEBIT,
                     ))
-                    subs_added.add(f"{name}-{current.month}-{current.year}")
+                    subs_added.add(key)
 
-        # Monthly subscriptions — spread day 8–12
+        # Monthly subscriptions (8th–12th)
         if 8 <= current.day <= 12:
-            for name, cat, price in MONTHLY_SUBSCRIPTIONS:
-                if f"{name}-{current.month}-{current.year}" not in subs_added:
+            for name, cat, price in MONTHLY_SUBS:
+                key = f"{name}-{current.month}-{current.year}"
+                if key not in subs_added:
                     txns.append(Transaction(
                         id=str(uuid.uuid4()),
                         date=current,
@@ -362,237 +430,103 @@ def _generate_everyday_transactions(start: date, end: date, stress: bool = False
                         amount=price,
                         transaction_type=TransactionType.DEBIT,
                     ))
-                    subs_added.add(f"{name}-{current.month}-{current.year}")
+                    subs_added.add(key)
 
-        # Variable daily spending
-        spend_multiplier = 0.55 if stress else 1.0
-        for merchant, cat, lo, hi, weekly_freq in EVERYDAY:
-            daily_prob = weekly_freq / 7.0
-            if _RNG.random() < daily_prob:
-                amount = _round2(_RNG.uniform(lo, hi) * spend_multiplier)
+        # Daily variable spend
+        for merchant, cat, lo, hi, wfreq in EVERYDAY:
+            if _RNG.random() < wfreq / 7.0:
                 txns.append(Transaction(
                     id=str(uuid.uuid4()),
                     date=current,
                     merchant=merchant,
                     category=cat,
-                    amount=amount,
+                    amount=_r2(_RNG.uniform(lo, hi)),
                     transaction_type=TransactionType.DEBIT,
                 ))
 
         current += timedelta(days=1)
 
-    return txns
-
-
-def _generate_event_transactions(
-    event_type: EventType,
-    signal_indices: List[int],
-    event_window_start: date,
-) -> List[Transaction]:
-    """Generate the signal transactions that betray the life event."""
-    candidates = EVENT_SIGNALS[event_type]
-    signals: List[Transaction] = []
-
-    # Spread signals over the event window
-    for idx, si in enumerate(signal_indices):
-        if si >= len(candidates):
-            continue
-        merchant, category, lo, hi = candidates[si]
-        # Stagger over ~30-day window
-        day_offset = int((idx / max(len(signal_indices) - 1, 1)) * (EVENT_WINDOW_DAYS - 4)) + 2
-        txn_date = event_window_start + timedelta(days=day_offset)
-        if txn_date > TODAY:
-            txn_date = TODAY - timedelta(days=_RNG.randint(1, 5))
-
-        amount = _round2(_RNG.uniform(lo, hi))
-        signals.append(Transaction(
+    # Add signal transactions (flagged)
+    for sig in signals:
+        txns.append(Transaction(
             id=str(uuid.uuid4()),
-            date=txn_date,
-            merchant=merchant,
-            category=category,
-            amount=amount,
+            date=sig.detected_date,
+            merchant=sig.merchant,
+            category=sig.label,
+            amount=sig.amount,
             transaction_type=TransactionType.DEBIT,
             is_signal=True,
         ))
 
-    # For home purchase: add a large wire transfer
-    if event_type == EventType.HOME_PURCHASE:
-        down_payment_date = event_window_start + timedelta(days=5)
-        signals.append(Transaction(
-            id=str(uuid.uuid4()),
-            date=down_payment_date,
-            merchant="Wire Transfer — Escrow Services Inc.",
-            category="Real Estate",
-            amount=_round2(_RNG.uniform(22_000, 55_000)),
-            transaction_type=TransactionType.DEBIT,
-            is_signal=True,
-        ))
-
-    # For job change: add new employer deposit (or gap)
-    if event_type == EventType.JOB_CHANGE:
-        new_employer = _RNG.choice([e for e in SALARY_EMPLOYERS if "Capital One" not in e])
-        new_deposit_date = event_window_start + timedelta(days=20)
-        signals.append(Transaction(
-            id=str(uuid.uuid4()),
-            date=new_deposit_date,
-            merchant=f"Direct Deposit — {new_employer}",
-            category="Income",
-            amount=_round2(_RNG.uniform(3_200, 4_800)),
-            transaction_type=TransactionType.CREDIT,
-            is_signal=True,
-        ))
-
-    # For financial stress: repeat fees
-    if event_type == EventType.FINANCIAL_STRESS:
-        for extra_day in [8, 18, 28]:
-            d = event_window_start + timedelta(days=extra_day)
-            if d <= TODAY:
-                signals.append(Transaction(
-                    id=str(uuid.uuid4()),
-                    date=d,
-                    merchant="Overdraft Fee - Capital One",
-                    category="Bank Fee",
-                    amount=35.0,
-                    transaction_type=TransactionType.DEBIT,
-                    is_signal=True,
-                ))
-
-    return signals
-
-
-def _build_life_event(
-    event_type: EventType,
-    confidence: float,
-    signal_txns: List[Transaction],
-    event_window_start: date,
-) -> LifeEvent:
-    severity = _severity(confidence)
-    detected_date = event_window_start + timedelta(days=3)
-    days_ago = (TODAY - detected_date).days
-
-    signal_descriptions = {
-        EventType.RELOCATION: [
-            "Moving truck/storage rental detected",
-            "Multiple furniture retailer purchases",
-            "New utility account activation",
-            "Geographic shift in merchant location",
-            "High-value home goods purchases",
-        ],
-        EventType.NEW_BABY: [
-            "Baby specialty retailer purchases",
-            "OB/GYN and prenatal care charges",
-            "Pediatric provider enrollment",
-            "Infant product subscription",
-            "Maternity apparel purchases",
-        ],
-        EventType.HOME_PURCHASE: [
-            "Title insurance payment detected",
-            "Home inspection service charge",
-            "Large escrow/wire transfer",
-            "Home improvement spend spike",
-            "Real estate closing costs",
-        ],
-        EventType.JOB_CHANGE: [
-            "Employer name change in direct deposit",
-            "LinkedIn Premium subscription",
-            "Professional services spending",
-            "Salary deposit pattern disruption",
-            "Career-related retail purchases",
-        ],
-        EventType.FINANCIAL_STRESS: [
-            "Multiple NSF/overdraft fees",
-            "Payday loan provider charge",
-            "Late payment fees across services",
-            "Significant spending reduction",
-            "Minimum-balance pattern detected",
-        ],
-        EventType.MARRIAGE: [
-            "Wedding venue deposit",
-            "Bridal retailer purchases",
-            "High-value jewelry purchase",
-            "Wedding registry activity",
-            "Honeymoon travel booking",
-        ],
-        EventType.DIVORCE: [
-            "Family law attorney retainer",
-            "Mediation services charge",
-            "New apartment security deposit",
-            "Single-occupant utility setup",
-            "Moving and storage charges",
-        ],
-    }
-
-    signal_merchants = [t.merchant for t in signal_txns[:5]]
-    signals = signal_descriptions.get(event_type, [])[:len(signal_txns)]
-
-    return LifeEvent(
-        event_type=event_type,
-        confidence=confidence,
-        severity=severity,
-        detected_date=detected_date,
-        days_ago=days_ago,
-        signals=signals,
-        signal_transactions=signal_merchants,
-    )
+    return sorted(txns, key=lambda t: t.date, reverse=True)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def generate_customers() -> List[CustomerDetail]:
-    customers: List[CustomerDetail] = []
-    history_start = TODAY - timedelta(days=HISTORY_DAYS)
-    event_window_start = TODAY - timedelta(days=EVENT_WINDOW_DAYS)
+def _build_customer(seed: dict) -> CustomerDetail:
+    signals = _build_signals(seed, TODAY - timedelta(days=HISTORY_DAYS))
+    transactions = _build_transactions(seed, signals)
 
-    for seed in CUSTOMER_SEEDS:
-        is_stress = seed["event_type"] == EventType.FINANCIAL_STRESS
+    debit_total = sum(t.amount for t in transactions if t.transaction_type == TransactionType.DEBIT)
+    avg_monthly = _r2(debit_total / 3)
 
-        # Base everyday transactions for full 90-day window
-        everyday_txns = _generate_everyday_transactions(history_start, TODAY, stress=is_stress)
+    first_signal_date = signals[0].detected_date if signals else TODAY
 
-        # Event-specific signal transactions in the recent window
-        signal_txns = _generate_event_transactions(
-            seed["event_type"],
-            seed["signal_indices"],
-            event_window_start,
-        )
+    relocation = RelocationEvent(
+        confidence=seed["confidence"],
+        churn_risk=seed["churn_risk"],
+        status=seed["status"],
+        origin_city=seed["origin_city"],
+        destination_city=seed["destination_city"],
+        first_signal_date=first_signal_date,
+        days_since_first_signal=seed["days_since_first_signal"],
+        signals=signals,
+    )
 
-        all_txns = sorted(everyday_txns + signal_txns, key=lambda t: t.date, reverse=True)
-
-        # Average monthly debit spend
-        debit_total = sum(t.amount for t in all_txns if t.transaction_type == TransactionType.DEBIT)
-        avg_monthly = _round2(debit_total / 3)
-
-        life_event = _build_life_event(
-            seed["event_type"],
-            seed["confidence"],
-            signal_txns,
-            event_window_start,
-        )
-
-        customer = CustomerDetail(
-            id=str(uuid.uuid5(uuid.NAMESPACE_DNS, seed["name"])),
-            name=seed["name"],
-            account_number=_acct_number(seed["name"]),
-            age=seed["age"],
-            location=seed["location"],
-            relationship_manager=seed["rm"],
-            life_event=life_event,
-            avg_monthly_spend=avg_monthly,
-            account_tenure_years=seed["tenure_years"],
-            transactions=all_txns,
-        )
-        customers.append(customer)
-
-    return customers
+    return CustomerDetail(
+        id=str(uuid.uuid5(uuid.NAMESPACE_DNS, seed["name"])),
+        name=seed["name"],
+        account_number=_acct(seed["name"]),
+        age=seed["age"],
+        relationship_manager=seed["rm"],
+        relocation=relocation,
+        avg_monthly_spend=avg_monthly,
+        account_tenure_years=seed["tenure_years"],
+        transactions=transactions,
+    )
 
 
-# Module-level cache — generated once at import
-_CUSTOMERS: List[CustomerDetail] = generate_customers()
+_CUSTOMERS: List[CustomerDetail] = [_build_customer(s) for s in CUSTOMER_SEEDS]
+
+# In-memory status store so PATCH updates survive within a process session
+_STATUS_OVERRIDES: dict[str, RelocationStatus] = {}
 
 
 def get_all_customers() -> List[CustomerDetail]:
-    return _CUSTOMERS
+    result = []
+    for c in _CUSTOMERS:
+        if c.id in _STATUS_OVERRIDES:
+            updated = c.model_copy(deep=True)
+            updated.relocation.status = _STATUS_OVERRIDES[c.id]
+            result.append(updated)
+        else:
+            result.append(c)
+    return result
 
 
 def get_customer_by_id(customer_id: str) -> CustomerDetail | None:
-    return next((c for c in _CUSTOMERS if c.id == customer_id), None)
+    base = next((c for c in _CUSTOMERS if c.id == customer_id), None)
+    if base is None:
+        return None
+    if customer_id in _STATUS_OVERRIDES:
+        updated = base.model_copy(deep=True)
+        updated.relocation.status = _STATUS_OVERRIDES[customer_id]
+        return updated
+    return base
+
+
+def update_customer_status(customer_id: str, status: RelocationStatus) -> bool:
+    if not any(c.id == customer_id for c in _CUSTOMERS):
+        return False
+    _STATUS_OVERRIDES[customer_id] = status
+    return True

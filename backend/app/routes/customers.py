@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 
-from app.data_generator import get_all_customers, get_customer_by_id
-from app.brief_generator import generate_brief
-from app.models import CustomerSummary, CustomerDetail, OutreachBrief
+from app.data_generator import get_all_customers, get_customer_by_id, update_customer_status
+from app.brief_generator import generate_conversation_starter
+from app.models import CustomerSummary, CustomerDetail, ConversationStarter, StatusUpdate
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
@@ -30,11 +30,18 @@ def get_transactions(customer_id: str, limit: int = 60):
     return customer.transactions[:limit]
 
 
-@router.get("/{customer_id}/brief", response_model=OutreachBrief)
-def get_outreach_brief(customer_id: str):
+@router.get("/{customer_id}/brief", response_model=ConversationStarter)
+def get_conversation_starter(customer_id: str):
     customer = get_customer_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    if not customer.life_event:
-        raise HTTPException(status_code=404, detail="No life event detected for this customer")
-    return generate_brief(customer)
+    return generate_conversation_starter(customer)
+
+
+@router.patch("/{customer_id}/status", response_model=CustomerSummary)
+def patch_status(customer_id: str, body: StatusUpdate):
+    ok = update_customer_status(customer_id, body.status)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    customer = get_customer_by_id(customer_id)
+    return CustomerSummary(**customer.model_dump(exclude={"transactions"}))

@@ -4,13 +4,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        navy: {
-          50:  '#eef2ff',
-          100: '#e0e7ff',
-          600: '#1e2a5e',
-          700: '#172154',
-          800: '#111843',
-          900: '#0c1130',
+        sidebar: '#111111',
+        'sidebar-border': '#1F1F1F',
+        'sidebar-hover': '#1A1A1A',
+        accent: {
+          DEFAULT: '#5B5EA6',
+          light: '#EEEEF8',
+          dark: '#4A4D8F',
         },
       },
       fontFamily: {

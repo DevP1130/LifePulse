@@ -4,25 +4,16 @@ from datetime import date
 from enum import Enum
 
 
-class EventType(str, Enum):
-    RELOCATION = "relocation"
-    NEW_BABY = "new_baby"
-    HOME_PURCHASE = "home_purchase"
-    JOB_CHANGE = "job_change"
-    FINANCIAL_STRESS = "financial_stress"
-    MARRIAGE = "marriage"
-    DIVORCE = "divorce"
-
-
-class Severity(str, Enum):
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-
 class TransactionType(str, Enum):
     DEBIT = "debit"
     CREDIT = "credit"
+
+
+class RelocationStatus(str, Enum):
+    NEW = "new"
+    ACTIVE = "active"
+    CONTACTED = "contacted"
+    RESOLVED = "resolved"
 
 
 class Transaction(BaseModel):
@@ -35,14 +26,25 @@ class Transaction(BaseModel):
     is_signal: bool = False
 
 
-class LifeEvent(BaseModel):
-    event_type: EventType
-    confidence: float
-    severity: Severity
+class RelocationSignal(BaseModel):
+    id: str
+    signal_type: str       # TRUCK_RENTAL | STORAGE_UNIT | ADDRESS_CHANGE | etc.
+    label: str             # human-readable category name
+    merchant: str
     detected_date: date
-    days_ago: int
-    signals: List[str]
-    signal_transactions: List[str]
+    amount: float
+    description: str       # one-line explanation shown in signal feed
+
+
+class RelocationEvent(BaseModel):
+    confidence: float
+    churn_risk: float
+    status: RelocationStatus
+    origin_city: str
+    destination_city: str
+    first_signal_date: date
+    days_since_first_signal: int
+    signals: List[RelocationSignal]
 
 
 class CustomerSummary(BaseModel):
@@ -50,9 +52,8 @@ class CustomerSummary(BaseModel):
     name: str
     account_number: str
     age: int
-    location: str
     relationship_manager: str
-    life_event: Optional[LifeEvent]
+    relocation: RelocationEvent
     avg_monthly_spend: float
     account_tenure_years: int
 
@@ -61,22 +62,17 @@ class CustomerDetail(CustomerSummary):
     transactions: List[Transaction]
 
 
-class RecommendedProduct(BaseModel):
-    name: str
-    rationale: str
-
-
-class OutreachBrief(BaseModel):
+class ConversationStarter(BaseModel):
     customer_id: str
     customer_name: str
-    event_type: EventType
-    event_label: str
-    summary: str
-    signal_transactions: List[Transaction]
-    recommended_products: List[RecommendedProduct]
-    talking_points: List[str]
-    urgency_level: str
-    urgency_rationale: str
-    draft_subject: str
-    draft_message: str
+    tier: str                      # "early" | "active" | "deep" | "post"
+    opener: str                    # 2–3 sentence personalized opening
+    key_context: List[str]         # 3 bullet points for the RM
+    suggested_products: List[str]
+    churn_risk_explanation: str
+    call_guide: str                # a short script for the call
     generated_date: date
+
+
+class StatusUpdate(BaseModel):
+    status: RelocationStatus

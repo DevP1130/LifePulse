@@ -3,15 +3,21 @@
 @tailwind utilities;
 
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-[#F7F8FA] text-gray-900 antialiased;
     font-family: 'Inter', system-ui, sans-serif;
   }
-}
-
-@layer utilities {
-  .scrollbar-thin {
-    scrollbar-width: thin;
-    scrollbar-color: #cbd5e1 transparent;
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-200 rounded-full;
   }
 }
