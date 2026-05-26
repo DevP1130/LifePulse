@@ -56,7 +56,7 @@ export default function Sidebar() {
           </div>
           <span className="text-white font-semibold text-sm tracking-tight">LifePulse</span>
         </div>
-        <p className="text-[#555] text-xs mt-1 pl-8">Relocation Intelligence</p>
+        <p className="text-[#555] text-xs mt-1 pl-8">Life Event Intelligence</p>
       </div>
 
       {/* Navigation */}

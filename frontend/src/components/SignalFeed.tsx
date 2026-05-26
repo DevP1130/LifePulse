@@ -1,6 +1,7 @@
-import type { RelocationSignal } from '../types'
+import type { EventSignal } from '../types'
 
 const TYPE_ICON: Record<string, string> = {
+  // Relocation
   TRUCK_RENTAL:      '🚚',
   STORAGE_UNIT:      '📦',
   ADDRESS_CHANGE:    '📬',
@@ -9,9 +10,32 @@ const TYPE_ICON: Record<string, string> = {
   TEMP_HOUSING:      '🏨',
   FURNITURE:         '🛋️',
   NEW_CITY_MERCHANT: '📍',
+  // New Baby
+  MATERNITY_STORE:   '🤰',
+  BABY_REGISTRY:     '🍼',
+  BABY_GEAR:         '🧸',
+  BABY_FURNITURE:    '🪑',
+  HOSPITAL_BILL:     '🏥',
+  PEDIATRICIAN:      '👶',
+  CHILDCARE_DEPOSIT: '🏫',
+  // Marriage
+  ENGAGEMENT_RING:   '💍',
+  WEDDING_VENUE:     '🏛️',
+  WEDDING_PLANNER:   '📋',
+  BRIDAL_STORE:      '👰',
+  CATERING_DEPOSIT:  '🍽️',
+  HONEYMOON_BOOKING: '✈️',
+  WEDDING_REGISTRY:  '🎁',
+  // Home Purchase
+  HOME_INSPECTION:   '🔍',
+  APPRAISAL_FEE:     '📊',
+  REAL_ESTATE_ATTY:  '⚖️',
+  DOWN_PAYMENT:      '🏠',
+  HOME_IMPROVEMENT:  '🔨',
 }
 
 const TYPE_COLOR: Record<string, string> = {
+  // Relocation
   TRUCK_RENTAL:      'bg-violet-100 border-violet-200',
   STORAGE_UNIT:      'bg-blue-50 border-blue-200',
   ADDRESS_CHANGE:    'bg-rose-50 border-rose-200',
@@ -20,6 +44,28 @@ const TYPE_COLOR: Record<string, string> = {
   TEMP_HOUSING:      'bg-teal-50 border-teal-200',
   FURNITURE:         'bg-purple-50 border-purple-200',
   NEW_CITY_MERCHANT: 'bg-emerald-50 border-emerald-200',
+  // New Baby
+  MATERNITY_STORE:   'bg-pink-50 border-pink-200',
+  BABY_REGISTRY:     'bg-pink-50 border-pink-200',
+  BABY_GEAR:         'bg-pink-50 border-pink-200',
+  BABY_FURNITURE:    'bg-pink-50 border-pink-200',
+  HOSPITAL_BILL:     'bg-red-50 border-red-200',
+  PEDIATRICIAN:      'bg-red-50 border-red-200',
+  CHILDCARE_DEPOSIT: 'bg-pink-100 border-pink-300',
+  // Marriage
+  ENGAGEMENT_RING:   'bg-rose-50 border-rose-200',
+  WEDDING_VENUE:     'bg-rose-50 border-rose-200',
+  WEDDING_PLANNER:   'bg-rose-50 border-rose-200',
+  BRIDAL_STORE:      'bg-rose-50 border-rose-200',
+  CATERING_DEPOSIT:  'bg-orange-50 border-orange-200',
+  HONEYMOON_BOOKING: 'bg-sky-50 border-sky-200',
+  WEDDING_REGISTRY:  'bg-rose-50 border-rose-200',
+  // Home Purchase
+  HOME_INSPECTION:   'bg-amber-50 border-amber-200',
+  APPRAISAL_FEE:     'bg-amber-50 border-amber-200',
+  REAL_ESTATE_ATTY:  'bg-slate-50 border-slate-200',
+  DOWN_PAYMENT:      'bg-green-50 border-green-200',
+  HOME_IMPROVEMENT:  'bg-amber-50 border-amber-200',
 }
 
 function formatDate(d: string) {
@@ -27,7 +73,7 @@ function formatDate(d: string) {
 }
 
 interface Props {
-  signals: RelocationSignal[]
+  signals: EventSignal[]
 }
 
 export default function SignalFeed({ signals }: Props) {

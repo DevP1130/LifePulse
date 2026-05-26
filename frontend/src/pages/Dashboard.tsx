@@ -1,20 +1,29 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
-import type { CustomerSummary, RelocationStatus } from '../types'
+import type { CustomerSummary, EventStatus, LifeEventType } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
 
 type SortKey = 'confidence' | 'churn_risk' | 'days' | 'name'
 type SortDir = 'asc' | 'desc'
 
-const STATUS_FILTERS: { value: RelocationStatus | 'all'; label: string }[] = [
+const STATUS_FILTERS: { value: EventStatus | 'all'; label: string }[] = [
   { value: 'all',       label: 'All'       },
   { value: 'new',       label: 'New'       },
   { value: 'active',    label: 'Active'    },
   { value: 'contacted', label: 'Contacted' },
   { value: 'resolved',  label: 'Resolved'  },
 ]
+
+const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string; color: string }> = {
+  relocation:    { label: 'Relocation',    icon: '🗺️', color: 'text-violet-700 bg-violet-50'  },
+  new_baby:      { label: 'New Baby',      icon: '👶', color: 'text-pink-700 bg-pink-50'      },
+  marriage:      { label: 'Marriage',      icon: '💍', color: 'text-rose-700 bg-rose-50'      },
+  home_purchase: { label: 'Home Purchase', icon: '🏠', color: 'text-amber-700 bg-amber-50'    },
+  job_change:    { label: 'Job Change',    icon: '💼', color: 'text-blue-700 bg-blue-50'      },
+  retirement:    { label: 'Retirement',    icon: '🌅', color: 'text-emerald-700 bg-emerald-50'},
+}
 
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2)
@@ -25,7 +34,7 @@ export default function Dashboard() {
   const [customers, setCustomers] = useState<CustomerSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<RelocationStatus | 'all'>('all')
+  const [filter, setFilter] = useState<EventStatus | 'all'>('all')
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'confidence', dir: 'desc' })
 
   useEffect(() => {
@@ -36,13 +45,13 @@ export default function Dashboard() {
   }, [])
 
   const filtered = useMemo(() => {
-    const base = filter === 'all' ? customers : customers.filter(c => c.relocation.status === filter)
+    const base = filter === 'all' ? customers : customers.filter(c => c.life_event.status === filter)
     return [...base].sort((a, b) => {
       const dir = sort.dir === 'asc' ? 1 : -1
       switch (sort.key) {
-        case 'confidence': return dir * (a.relocation.confidence - b.relocation.confidence)
-        case 'churn_risk': return dir * (a.relocation.churn_risk - b.relocation.churn_risk)
-        case 'days':       return dir * (a.relocation.days_since_first_signal - b.relocation.days_since_first_signal)
+        case 'confidence': return dir * (a.life_event.confidence - b.life_event.confidence)
+        case 'churn_risk': return dir * (a.life_event.churn_risk - b.life_event.churn_risk)
+        case 'days':       return dir * (a.life_event.days_since_first_signal - b.life_event.days_since_first_signal)
         case 'name':       return dir * a.name.localeCompare(b.name)
         default: return 0
       }
@@ -50,15 +59,12 @@ export default function Dashboard() {
   }, [customers, filter, sort])
 
   const stats = useMemo(() => {
-    const flagged = customers.filter(c => c.relocation.status !== 'resolved')
-    const needAction = customers.filter(c => ['new', 'active'].includes(c.relocation.status))
+    const needAction = customers.filter(c => ['new', 'active'].includes(c.life_event.status))
     const avgConf = customers.length
-      ? customers.reduce((s, c) => s + c.relocation.confidence, 0) / customers.length
-      : 0
+      ? customers.reduce((s, c) => s + c.life_event.confidence, 0) / customers.length : 0
     const avgRisk = customers.length
-      ? customers.reduce((s, c) => s + c.relocation.churn_risk, 0) / customers.length
-      : 0
-    return { total: customers.length, flagged: flagged.length, needAction: needAction.length, avgConf, avgRisk }
+      ? customers.reduce((s, c) => s + c.life_event.churn_risk, 0) / customers.length : 0
+    return { total: customers.length, needAction: needAction.length, avgConf, avgRisk }
   }, [customers])
 
   const toggleSort = (key: SortKey) =>
@@ -76,9 +82,9 @@ export default function Dashboard() {
     <div className="px-8 py-8">
       {/* Page header */}
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Relocation Intelligence</h1>
+        <h1 className="text-xl font-bold text-gray-900">Life Event Intelligence</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Customers with detected relocation signals — sorted by priority
+          Customers with detected life event signals — sorted by priority
         </p>
       </div>
 
@@ -86,10 +92,10 @@ export default function Dashboard() {
       {!loading && !error && (
         <div className="grid grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Monitored', value: stats.total, sub: 'total customers' },
-            { label: 'Needs Outreach', value: stats.needAction, sub: 'new or active', accent: true },
-            { label: 'Avg. Confidence', value: `${Math.round(stats.avgConf * 100)}%`, sub: 'detection accuracy' },
-            { label: 'Avg. Churn Risk', value: `${Math.round(stats.avgRisk * 100)}%`, sub: 'retention priority', warn: stats.avgRisk > 0.55 },
+            { label: 'Monitored',      value: stats.total,                                    sub: 'total customers'      },
+            { label: 'Needs Outreach', value: stats.needAction,                               sub: 'new or active', accent: true },
+            { label: 'Avg. Confidence',value: `${Math.round(stats.avgConf * 100)}%`,          sub: 'detection accuracy'   },
+            { label: 'Avg. Churn Risk',value: `${Math.round(stats.avgRisk * 100)}%`,          sub: 'retention priority', warn: stats.avgRisk > 0.55 },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-5 py-4">
               <p className={`text-2xl font-bold ${s.accent ? 'text-accent' : s.warn ? 'text-amber-500' : 'text-gray-900'}`}>
@@ -158,7 +164,7 @@ export default function Dashboard() {
                   Customer <SortChevron k="name" />
                 </th>
                 <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400">
-                  Route
+                  Life Event
                 </th>
                 <th
                   className="px-5 py-3 text-left text-xs font-semibold text-gray-400 cursor-pointer hover:text-gray-600 select-none"
@@ -189,8 +195,9 @@ export default function Dashboard() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.map(c => {
-                const rel = c.relocation
+                const ev = c.life_event
                 const ini = initials(c.name)
+                const evConfig = EVENT_TYPE_CONFIG[ev.event_type]
                 return (
                   <tr
                     key={c.id}
@@ -212,43 +219,44 @@ export default function Dashboard() {
                       </div>
                     </td>
 
-                    {/* Route */}
+                    {/* Life Event */}
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                        <span className="text-gray-500 text-xs">{rel.origin_city.split(',')[0]}</span>
-                        <svg className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M5 12h14M12 5l7 7-7 7" />
-                        </svg>
-                        <span className="text-gray-800 text-xs font-medium">{rel.destination_city.split(',')[0]}</span>
+                      <div>
+                        <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${evConfig.color}`}>
+                          {evConfig.icon} {evConfig.label}
+                        </span>
+                        <p className="text-xs text-gray-500 mt-1 max-w-[180px] truncate">
+                          {ev.event_summary}
+                        </p>
                       </div>
                     </td>
 
                     {/* Confidence */}
                     <td className="px-5 py-3.5">
-                      <MiniBar value={rel.confidence} variant="confidence" />
+                      <MiniBar value={ev.confidence} variant="confidence" />
                     </td>
 
                     {/* Churn risk */}
                     <td className="px-5 py-3.5">
-                      <MiniBar value={rel.churn_risk} variant="risk" />
+                      <MiniBar value={ev.churn_risk} variant="risk" />
                     </td>
 
                     {/* Status */}
                     <td className="px-5 py-3.5">
-                      <StatusBadge status={rel.status} size="sm" />
+                      <StatusBadge status={ev.status} size="sm" />
                     </td>
 
                     {/* Signals */}
                     <td className="px-5 py-3.5">
                       <span className="text-xs font-medium text-gray-600">
-                        {rel.signals.length} detected
+                        {ev.signals.length} detected
                       </span>
                     </td>
 
                     {/* Days */}
                     <td className="px-5 py-3.5">
                       <span className="text-xs text-gray-500 tabular-nums">
-                        {rel.days_since_first_signal}d ago
+                        {ev.days_since_first_signal}d ago
                       </span>
                     </td>
 

@@ -1,25 +1,34 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
-import type { CustomerDetail as CustomerDetailType, ConversationStarter, RelocationStatus } from '../types'
+import type { CustomerDetail as CustomerDetailType, ConversationStarter, EventStatus, LifeEventType } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
 import SignalFeed from '../components/SignalFeed'
 import ConversationStarterCard from '../components/ConversationStarterCard'
 import TransactionTable from '../components/TransactionTable'
 
-const STATUS_TRANSITIONS: Record<RelocationStatus, RelocationStatus[]> = {
+const STATUS_TRANSITIONS: Record<EventStatus, EventStatus[]> = {
   new:       ['active', 'contacted'],
   active:    ['contacted', 'resolved'],
   contacted: ['resolved', 'active'],
   resolved:  ['active'],
 }
 
-const STATUS_ACTION_LABEL: Record<RelocationStatus, string> = {
+const STATUS_ACTION_LABEL: Record<EventStatus, string> = {
   new:       'Mark Active',
   active:    'Mark Contacted',
   contacted: 'Mark Resolved',
   resolved:  'Reopen',
+}
+
+const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string; color: string }> = {
+  relocation:    { label: 'Relocation',    icon: '🗺️', color: 'text-violet-700 bg-violet-50 border-violet-100'  },
+  new_baby:      { label: 'New Baby',      icon: '👶', color: 'text-pink-700 bg-pink-50 border-pink-100'        },
+  marriage:      { label: 'Marriage',      icon: '💍', color: 'text-rose-700 bg-rose-50 border-rose-100'        },
+  home_purchase: { label: 'Home Purchase', icon: '🏠', color: 'text-amber-700 bg-amber-50 border-amber-100'     },
+  job_change:    { label: 'Job Change',    icon: '💼', color: 'text-blue-700 bg-blue-50 border-blue-100'        },
+  retirement:    { label: 'Retirement',    icon: '🌅', color: 'text-emerald-700 bg-emerald-50 border-emerald-100'},
 }
 
 export default function CustomerDetail() {
@@ -46,12 +55,12 @@ export default function CustomerDetail() {
       })
   }, [id])
 
-  const handleStatusChange = async (newStatus: RelocationStatus) => {
+  const handleStatusChange = async (newStatus: EventStatus) => {
     if (!customer || !id) return
     setUpdatingStatus(true)
     try {
       const updated = await api.updateStatus(id, newStatus)
-      setCustomer(prev => prev ? { ...prev, relocation: { ...prev.relocation, status: updated.relocation.status } } : prev)
+      setCustomer(prev => prev ? { ...prev, life_event: { ...prev.life_event, status: updated.life_event.status } } : prev)
       if (starter) {
         const refreshed = await api.getStarter(id)
         setStarter(refreshed)
@@ -87,10 +96,11 @@ export default function CustomerDetail() {
     )
   }
 
-  const rel = customer.relocation
-  const status = rel.status
+  const ev = customer.life_event
+  const status = ev.status
   const transitions = STATUS_TRANSITIONS[status]
   const primaryAction = transitions[0]
+  const evConfig = EVENT_TYPE_CONFIG[ev.event_type]
 
   return (
     <div className="px-8 py-8 max-w-6xl">
@@ -126,15 +136,27 @@ export default function CustomerDetail() {
               <span>·</span>
               <span>RM: {customer.relationship_manager}</span>
             </div>
-            {/* Route */}
-            <div className="flex items-center gap-2 mt-3">
-              <span className="text-sm text-gray-700 font-medium">{rel.origin_city}</span>
-              <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-              <span className="text-sm font-semibold text-accent">{rel.destination_city}</span>
-              <span className="text-xs text-gray-400 ml-2">
-                First signal {rel.days_since_first_signal}d ago
+
+            {/* Life event badge + detail */}
+            <div className="flex items-center gap-3 mt-3">
+              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${evConfig.color}`}>
+                {evConfig.icon} {evConfig.label}
+              </span>
+
+              {ev.event_type === 'relocation' && ev.origin_city && ev.destination_city ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-700 font-medium">{ev.origin_city}</span>
+                  <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                  <span className="text-sm font-semibold text-accent">{ev.destination_city}</span>
+                </div>
+              ) : (
+                <span className="text-sm text-gray-600">{ev.event_summary}</span>
+              )}
+
+              <span className="text-xs text-gray-400">
+                First signal {ev.days_since_first_signal}d ago
               </span>
             </div>
           </div>
@@ -146,11 +168,11 @@ export default function CustomerDetail() {
             <div className="flex flex-col gap-2">
               <div>
                 <p className="text-xs text-gray-400 mb-1">Confidence</p>
-                <MiniBar value={rel.confidence} variant="confidence" />
+                <MiniBar value={ev.confidence} variant="confidence" />
               </div>
               <div>
                 <p className="text-xs text-gray-400 mb-1">Churn Risk</p>
-                <MiniBar value={rel.churn_risk} variant="risk" />
+                <MiniBar value={ev.churn_risk} variant="risk" />
               </div>
             </div>
           </div>
@@ -179,20 +201,16 @@ export default function CustomerDetail() {
 
       {/* Signal feed + conversation starter — two columns */}
       <div className="grid grid-cols-5 gap-6 mb-6">
-        {/* Signal feed — 3/5 */}
         <div className="col-span-3">
           <div className="bg-white rounded-xl border border-gray-100 px-6 py-5 h-full">
-            <h2 className="text-sm font-semibold text-gray-900 mb-1">
-              Signal Timeline
-            </h2>
+            <h2 className="text-sm font-semibold text-gray-900 mb-1">Signal Timeline</h2>
             <p className="text-xs text-gray-400 mb-5">
-              {rel.signals.length} relocation signal{rel.signals.length !== 1 ? 's' : ''} detected · first seen {rel.days_since_first_signal}d ago
+              {ev.signals.length} signal{ev.signals.length !== 1 ? 's' : ''} detected · first seen {ev.days_since_first_signal}d ago
             </p>
-            <SignalFeed signals={rel.signals} />
+            <SignalFeed signals={ev.signals} />
           </div>
         </div>
 
-        {/* Conversation starter — 2/5 */}
         <div className="col-span-2">
           <ConversationStarterCard starter={starter!} loading={loadingStarter} />
         </div>
@@ -203,14 +221,12 @@ export default function CustomerDetail() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">Transaction History</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Last 90 days · signal transactions highlighted
-            </p>
+            <p className="text-xs text-gray-400 mt-0.5">Last 90 days · signal transactions highlighted</p>
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-400">
             <span className="inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-              Relocation signal
+              Life event signal
             </span>
           </div>
         </div>

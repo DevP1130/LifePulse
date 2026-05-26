@@ -3,7 +3,7 @@ from typing import List
 
 from app.data_generator import get_all_customers, get_customer_by_id, update_customer_status
 from app.brief_generator import generate_conversation_starter
-from app.models import CustomerSummary, CustomerDetail, ConversationStarter, StatusUpdate
+from app.models import CustomerSummary, CustomerDetail, ConversationStarter, StatusUpdate, EventStatus
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 

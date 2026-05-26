@@ -1,4 +1,4 @@
-import type { CustomerSummary, CustomerDetail, ConversationStarter, RelocationStatus } from '../types'
+import type { CustomerSummary, CustomerDetail, ConversationStarter, EventStatus } from '../types'
 
 const BASE = 'http://localhost:8000'
 
@@ -18,7 +18,7 @@ export const api = {
   getStarter: (id: string) =>
     request<ConversationStarter>(`/api/customers/${id}/brief`),
 
-  updateStatus: (id: string, status: RelocationStatus) =>
+  updateStatus: (id: string, status: EventStatus) =>
     request<CustomerSummary>(`/api/customers/${id}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

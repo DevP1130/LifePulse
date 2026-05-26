@@ -2,10 +2,10 @@ import { useState } from 'react'
 import type { ConversationStarter } from '../types'
 
 const TIER_CONFIG = {
-  early:  { label: 'Early Detection',    bg: 'bg-slate-100',   text: 'text-slate-600'   },
-  active: { label: 'Active Relocation',  bg: 'bg-accent/10',   text: 'text-accent'      },
-  deep:   { label: 'Deep Signal',        bg: 'bg-violet-100',  text: 'text-violet-700'  },
-  post:   { label: 'Post-Move',          bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  early:  { label: 'Early Detection', bg: 'bg-slate-100',   text: 'text-slate-600'   },
+  active: { label: 'In Progress',     bg: 'bg-accent/10',   text: 'text-accent'      },
+  deep:   { label: 'Deep Signal',     bg: 'bg-violet-100',  text: 'text-violet-700'  },
+  post:   { label: 'Post-Event',      bg: 'bg-emerald-100', text: 'text-emerald-700' },
 }
 
 interface Props {

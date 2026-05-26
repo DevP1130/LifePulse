@@ -9,11 +9,20 @@ class TransactionType(str, Enum):
     CREDIT = "credit"
 
 
-class RelocationStatus(str, Enum):
+class EventStatus(str, Enum):
     NEW = "new"
     ACTIVE = "active"
     CONTACTED = "contacted"
     RESOLVED = "resolved"
+
+
+class LifeEventType(str, Enum):
+    RELOCATION = "relocation"
+    NEW_BABY = "new_baby"
+    MARRIAGE = "marriage"
+    HOME_PURCHASE = "home_purchase"
+    JOB_CHANGE = "job_change"
+    RETIREMENT = "retirement"
 
 
 class Transaction(BaseModel):
@@ -26,25 +35,28 @@ class Transaction(BaseModel):
     is_signal: bool = False
 
 
-class RelocationSignal(BaseModel):
+class EventSignal(BaseModel):
     id: str
-    signal_type: str       # TRUCK_RENTAL | STORAGE_UNIT | ADDRESS_CHANGE | etc.
-    label: str             # human-readable category name
+    signal_type: str
+    label: str
     merchant: str
     detected_date: date
     amount: float
-    description: str       # one-line explanation shown in signal feed
+    description: str
 
 
-class RelocationEvent(BaseModel):
+class LifeEvent(BaseModel):
+    event_type: LifeEventType
+    event_summary: str
     confidence: float
     churn_risk: float
-    status: RelocationStatus
-    origin_city: str
-    destination_city: str
+    status: EventStatus
     first_signal_date: date
     days_since_first_signal: int
-    signals: List[RelocationSignal]
+    signals: List[EventSignal]
+    # Relocation-only fields
+    origin_city: Optional[str] = None
+    destination_city: Optional[str] = None
 
 
 class CustomerSummary(BaseModel):
@@ -53,7 +65,7 @@ class CustomerSummary(BaseModel):
     account_number: str
     age: int
     relationship_manager: str
-    relocation: RelocationEvent
+    life_event: LifeEvent
     avg_monthly_spend: float
     account_tenure_years: int
 
@@ -65,14 +77,14 @@ class CustomerDetail(CustomerSummary):
 class ConversationStarter(BaseModel):
     customer_id: str
     customer_name: str
-    tier: str                      # "early" | "active" | "deep" | "post"
-    opener: str                    # 2–3 sentence personalized opening
-    key_context: List[str]         # 3 bullet points for the RM
+    tier: str                       # "early" | "active" | "deep" | "post"
+    opener: str
+    key_context: List[str]          # 3 bullet points for the RM
     suggested_products: List[str]
     churn_risk_explanation: str
-    call_guide: str                # a short script for the call
+    call_guide: str
     generated_date: date
 
 
 class StatusUpdate(BaseModel):
-    status: RelocationStatus
+    status: EventStatus

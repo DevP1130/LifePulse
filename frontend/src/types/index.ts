@@ -1,5 +1,6 @@
-export type RelocationStatus = 'new' | 'active' | 'contacted' | 'resolved'
+export type EventStatus = 'new' | 'active' | 'contacted' | 'resolved'
 export type TransactionType = 'debit' | 'credit'
+export type LifeEventType = 'relocation' | 'new_baby' | 'marriage' | 'home_purchase' | 'job_change' | 'retirement'
 
 export interface Transaction {
   id: string
@@ -11,7 +12,7 @@ export interface Transaction {
   is_signal: boolean
 }
 
-export interface RelocationSignal {
+export interface EventSignal {
   id: string
   signal_type: string
   label: string
@@ -21,15 +22,17 @@ export interface RelocationSignal {
   description: string
 }
 
-export interface RelocationEvent {
+export interface LifeEvent {
+  event_type: LifeEventType
+  event_summary: string
   confidence: number
   churn_risk: number
-  status: RelocationStatus
-  origin_city: string
-  destination_city: string
+  status: EventStatus
   first_signal_date: string
   days_since_first_signal: number
-  signals: RelocationSignal[]
+  signals: EventSignal[]
+  origin_city?: string
+  destination_city?: string
 }
 
 export interface CustomerSummary {
@@ -38,7 +41,7 @@ export interface CustomerSummary {
   account_number: string
   age: number
   relationship_manager: string
-  relocation: RelocationEvent
+  life_event: LifeEvent
   avg_monthly_spend: number
   account_tenure_years: number
 }
