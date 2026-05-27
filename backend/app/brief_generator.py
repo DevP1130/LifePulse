@@ -66,6 +66,24 @@ OUTPUT RULES:
 - call_guide: 4 labeled steps — Open, Qualify, Pivot, Close — with exact suggested language in quotes
 - tier: must be one of early / active / deep / post"""
 
+_TONE_INSTRUCTIONS: dict[str, str] = {
+    "formal": (
+        "\n\nTONE: Write in a formal, professional style. Use precise, concise language. "
+        "No contractions, no casual phrasing, no filler words. "
+        "The opener should read like a letter from a trusted financial advisor — direct and informative."
+    ),
+    "conversational": (
+        "\n\nTONE: Write in a warm, natural tone — like a knowledgeable colleague who works in banking. "
+        "Use contractions. Be friendly and direct. Should feel like a genuine check-in, not a scripted sales call."
+    ),
+    "empathetic": (
+        "\n\nTONE: Lead with genuine empathy before anything else. Acknowledge that this life event can be "
+        "stressful, exciting, or overwhelming. Make the customer feel heard and understood first. "
+        "Weave in any product relevance naturally after establishing an emotional connection — "
+        "never open with banking topics."
+    ),
+}
+
 _RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -81,7 +99,7 @@ _RESPONSE_SCHEMA = {
 }
 
 
-def _build_user_prompt(customer: CustomerDetail) -> str:
+def _build_user_prompt(customer: CustomerDetail, tone: str = "conversational") -> str:
     rel = customer.life_event
     signals_text = "\n".join(
         f"  - [{s.signal_type}] {s.merchant} — ${s.amount:.2f} on {s.detected_date} ({s.description})"
@@ -90,6 +108,8 @@ def _build_user_prompt(customer: CustomerDetail) -> str:
     route_line = ""
     if rel.origin_city and rel.destination_city:
         route_line = f"\nRoute: {rel.origin_city} → {rel.destination_city}"
+
+    tone_instruction = _TONE_INSTRUCTIONS.get(tone, _TONE_INSTRUCTIONS["conversational"])
 
     return f"""Generate a life event outreach brief for this Capital One customer.
 
@@ -104,10 +124,10 @@ Days since first signal: {rel.days_since_first_signal}
 Signal count: {len(rel.signals)}
 
 Signals detected:
-{signals_text}"""
+{signals_text}{tone_instruction}"""
 
 
-def _generate_with_claude(customer: CustomerDetail) -> ConversationStarter:
+def _generate_with_claude(customer: CustomerDetail, tone: str = "conversational") -> ConversationStarter:
     response = _client.messages.create(
         model="claude-opus-4-7",
         max_tokens=1024,
@@ -118,7 +138,7 @@ def _generate_with_claude(customer: CustomerDetail) -> ConversationStarter:
         }],
         messages=[{
             "role": "user",
-            "content": _build_user_prompt(customer),
+            "content": _build_user_prompt(customer, tone),
         }],
         output_config={
             "format": {
@@ -317,10 +337,10 @@ def _generate_from_templates(customer: CustomerDetail) -> ConversationStarter:
 
 # ── Public entry point ────────────────────────────────────────────────────────
 
-def generate_conversation_starter(customer: CustomerDetail) -> ConversationStarter:
+def generate_conversation_starter(customer: CustomerDetail, tone: str = "conversational") -> ConversationStarter:
     if _client is not None:
         try:
-            return _generate_with_claude(customer)
+            return _generate_with_claude(customer, tone=tone)
         except Exception:
             pass
     return _generate_from_templates(customer)

@@ -35,7 +35,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<EventStatus | 'all'>('all')
-  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'confidence', dir: 'desc' })
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'days', dir: 'asc' })
 
   useEffect(() => {
     api.listCustomers()
@@ -108,7 +108,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Filter + count bar */}
+      {/* Filter + sort bar */}
       {!loading && !error && (
         <div className="flex items-center justify-between mb-4">
           <div className="flex gap-1">
@@ -126,9 +126,34 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
-          <span className="text-xs text-gray-400">
-            {filtered.length} customer{filtered.length !== 1 ? 's' : ''}
-          </span>
+          <div className="flex items-center gap-3">
+            {/* Sort preset toggle */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
+              <button
+                onClick={() => setSort({ key: 'days', dir: 'asc' })}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                  sort.key === 'days' && sort.dir === 'asc'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Most Recent
+              </button>
+              <button
+                onClick={() => setSort({ key: 'confidence', dir: 'desc' })}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                  sort.key === 'confidence' && sort.dir === 'desc'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Highest Confidence
+              </button>
+            </div>
+            <span className="text-xs text-gray-400">
+              {filtered.length} customer{filtered.length !== 1 ? 's' : ''}
+            </span>
+          </div>
         </div>
       )}
 
@@ -255,9 +280,16 @@ export default function Dashboard() {
 
                     {/* Days */}
                     <td className="px-5 py-3.5">
-                      <span className="text-xs text-gray-500 tabular-nums">
-                        {ev.days_since_first_signal}d ago
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-500 tabular-nums">
+                          {ev.days_since_first_signal}d ago
+                        </span>
+                        {ev.days_since_first_signal <= 7 && ev.status !== 'resolved' && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-full leading-none">
+                            Urgent
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Arrow */}

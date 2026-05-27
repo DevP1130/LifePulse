@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import List
 
 from app.data_generator import get_all_customers, get_customer_by_id, update_customer_status
@@ -31,11 +31,14 @@ def get_transactions(customer_id: str, limit: int = 60):
 
 
 @router.get("/{customer_id}/brief", response_model=ConversationStarter)
-def get_conversation_starter(customer_id: str):
+def get_conversation_starter(
+    customer_id: str,
+    tone: str = Query("conversational", pattern="^(formal|conversational|empathetic)$"),
+):
     customer = get_customer_by_id(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return generate_conversation_starter(customer)
+    return generate_conversation_starter(customer, tone=tone)
 
 
 @router.patch("/{customer_id}/status", response_model=CustomerSummary)

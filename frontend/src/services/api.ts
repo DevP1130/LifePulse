@@ -15,8 +15,8 @@ export const api = {
   getCustomer: (id: string) =>
     request<CustomerDetail>(`/api/customers/${id}`),
 
-  getStarter: (id: string) =>
-    request<ConversationStarter>(`/api/customers/${id}/brief`),
+  getStarter: (id: string, tone: string = 'conversational') =>
+    request<ConversationStarter>(`/api/customers/${id}/brief?tone=${tone}`),
 
   updateStatus: (id: string, status: EventStatus) =>
     request<CustomerSummary>(`/api/customers/${id}/status`, {

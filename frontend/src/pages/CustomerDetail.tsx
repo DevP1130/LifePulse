@@ -5,6 +5,7 @@ import type { CustomerDetail as CustomerDetailType, ConversationStarter, EventSt
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
 import SignalFeed from '../components/SignalFeed'
+import SignalTimeline from '../components/SignalTimeline'
 import ConversationStarterCard from '../components/ConversationStarterCard'
 import TransactionTable from '../components/TransactionTable'
 
@@ -41,12 +42,13 @@ export default function CustomerDetail() {
   const [loadingStarter, setLoadingStarter] = useState(true)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tone, setTone] = useState<'formal' | 'conversational' | 'empathetic'>('conversational')
 
   useEffect(() => {
     if (!id) return
     Promise.all([
       api.getCustomer(id).then(setCustomer),
-      api.getStarter(id).then(setStarter),
+      api.getStarter(id, tone).then(setStarter),
     ])
       .catch(() => setError('Failed to load customer data.'))
       .finally(() => {
@@ -54,6 +56,20 @@ export default function CustomerDetail() {
         setLoadingStarter(false)
       })
   }, [id])
+
+  const handleToneChange = async (newTone: 'formal' | 'conversational' | 'empathetic') => {
+    if (!id || newTone === tone) return
+    setTone(newTone)
+    setLoadingStarter(true)
+    try {
+      const refreshed = await api.getStarter(id, newTone)
+      setStarter(refreshed)
+    } catch {
+      // silent fail in demo
+    } finally {
+      setLoadingStarter(false)
+    }
+  }
 
   const handleStatusChange = async (newStatus: EventStatus) => {
     if (!customer || !id) return
@@ -204,14 +220,42 @@ export default function CustomerDetail() {
         <div className="col-span-3">
           <div className="bg-white rounded-xl border border-gray-100 px-6 py-5 h-full">
             <h2 className="text-sm font-semibold text-gray-900 mb-1">Signal Timeline</h2>
-            <p className="text-xs text-gray-400 mb-5">
+            <p className="text-xs text-gray-400 mb-4">
               {ev.signals.length} signal{ev.signals.length !== 1 ? 's' : ''} detected · first seen {ev.days_since_first_signal}d ago
             </p>
-            <SignalFeed signals={ev.signals} />
+            <SignalTimeline signals={ev.signals} />
+            <div className="border-t border-gray-50 pt-4">
+              <SignalFeed signals={ev.signals} />
+            </div>
           </div>
         </div>
 
-        <div className="col-span-2">
+        <div className="col-span-2 flex flex-col gap-3">
+          {/* Tone selector */}
+          <div className="bg-white rounded-xl border border-gray-100 px-4 py-3.5">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Brief Tone</p>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+              {(['formal', 'conversational', 'empathetic'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => handleToneChange(t)}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md capitalize transition-colors ${
+                    tone === t
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-2 leading-snug">
+              {tone === 'formal' && 'Professional and concise — reads like a letter from a financial advisor.'}
+              {tone === 'conversational' && 'Warm and natural — feels like a genuine check-in, not a sales call.'}
+              {tone === 'empathetic' && 'Leads with care — acknowledges the human side before any banking topic.'}
+            </p>
+          </div>
+
           <ConversationStarterCard starter={starter!} loading={loadingStarter} />
         </div>
       </div>
