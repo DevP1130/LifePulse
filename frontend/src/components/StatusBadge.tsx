@@ -1,6 +1,6 @@
-import type { RelocationStatus } from '../types'
+import type { EventStatus } from '../types'
 
-const CONFIG: Record<RelocationStatus, { dot: string; text: string; label: string }> = {
+const CONFIG: Record<EventStatus, { dot: string; text: string; label: string }> = {
   new:       { dot: 'bg-slate-400',   text: 'text-slate-500',   label: 'New'       },
   active:    { dot: 'bg-accent',      text: 'text-accent',      label: 'Active'    },
   contacted: { dot: 'bg-emerald-500', text: 'text-emerald-600', label: 'Contacted' },
@@ -8,7 +8,7 @@ const CONFIG: Record<RelocationStatus, { dot: string; text: string; label: strin
 }
 
 interface Props {
-  status: RelocationStatus
+  status: EventStatus
   size?: 'sm' | 'md'
 }
 

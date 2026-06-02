@@ -50,6 +50,15 @@ export interface CustomerDetail extends CustomerSummary {
   transactions: Transaction[]
 }
 
+export interface ActivityEntry {
+  id: string
+  customerId: string
+  customerName: string
+  fromStatus: EventStatus
+  toStatus: EventStatus
+  timestamp: string
+}
+
 export interface ConversationStarter {
   customer_id: string
   customer_name: string

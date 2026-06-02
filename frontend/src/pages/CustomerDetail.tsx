@@ -1,13 +1,25 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
-import type { CustomerDetail as CustomerDetailType, ConversationStarter, EventStatus, LifeEventType } from '../types'
+import type { CustomerDetail as CustomerDetailType, ConversationStarter, EventStatus, LifeEventType, ActivityEntry } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
 import SignalFeed from '../components/SignalFeed'
 import SignalTimeline from '../components/SignalTimeline'
 import ConversationStarterCard from '../components/ConversationStarterCard'
 import TransactionTable from '../components/TransactionTable'
+
+function appendActivity(entry: Omit<ActivityEntry, 'id' | 'timestamp'>) {
+  try {
+    const existing: ActivityEntry[] = JSON.parse(localStorage.getItem('lp_activity') ?? '[]')
+    const newEntry: ActivityEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      ...entry,
+      timestamp: new Date().toISOString(),
+    }
+    localStorage.setItem('lp_activity', JSON.stringify([newEntry, ...existing].slice(0, 100)))
+  } catch {}
+}
 
 const STATUS_TRANSITIONS: Record<EventStatus, EventStatus[]> = {
   new:       ['active', 'contacted'],
@@ -73,10 +85,12 @@ export default function CustomerDetail() {
 
   const handleStatusChange = async (newStatus: EventStatus) => {
     if (!customer || !id) return
+    const prevStatus = customer.life_event.status
     setUpdatingStatus(true)
     try {
       const updated = await api.updateStatus(id, newStatus)
       setCustomer(prev => prev ? { ...prev, life_event: { ...prev.life_event, status: updated.life_event.status } } : prev)
+      appendActivity({ customerId: id, customerName: customer.name, fromStatus: prevStatus, toStatus: newStatus })
       if (starter) {
         const refreshed = await api.getStarter(id)
         setStarter(refreshed)

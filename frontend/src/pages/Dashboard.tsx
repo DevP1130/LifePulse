@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
-import type { CustomerSummary, EventStatus, LifeEventType } from '../types'
+import type { CustomerSummary, EventStatus, LifeEventType, ActivityEntry } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
 
@@ -17,19 +17,26 @@ const STATUS_FILTERS: { value: EventStatus | 'all'; label: string }[] = [
   { value: 'resolved',  label: 'Resolved'  },
 ]
 
-const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string; color: string }> = {
-  relocation:    { label: 'Relocation',    icon: '🗺️', color: 'text-violet-700 bg-violet-50'  },
-  new_baby:      { label: 'New Baby',      icon: '👶', color: 'text-pink-700 bg-pink-50'      },
-  marriage:      { label: 'Marriage',      icon: '💍', color: 'text-rose-700 bg-rose-50'      },
-  home_purchase: { label: 'Home Purchase', icon: '🏠', color: 'text-amber-700 bg-amber-50'    },
-  job_change:    { label: 'Job Change',    icon: '💼', color: 'text-blue-700 bg-blue-50'      },
-  retirement:    { label: 'Retirement',    icon: '🌅', color: 'text-emerald-700 bg-emerald-50'},
+const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string; color: string; bar: string }> = {
+  relocation:    { label: 'Relocation',    icon: '🗺️', color: 'text-violet-700 bg-violet-50', bar: 'bg-violet-400' },
+  new_baby:      { label: 'New Baby',      icon: '👶', color: 'text-pink-700 bg-pink-50',     bar: 'bg-pink-400'   },
+  marriage:      { label: 'Marriage',      icon: '💍', color: 'text-rose-700 bg-rose-50',     bar: 'bg-rose-400'   },
+  home_purchase: { label: 'Home Purchase', icon: '🏠', color: 'text-amber-700 bg-amber-50',   bar: 'bg-amber-400'  },
+  job_change:    { label: 'Job Change',    icon: '💼', color: 'text-blue-700 bg-blue-50',     bar: 'bg-blue-400'   },
+  retirement:    { label: 'Retirement',    icon: '🌅', color: 'text-emerald-700 bg-emerald-50',bar: 'bg-emerald-400'},
 }
 
 const OUTREACH_STYLE: Record<OutreachStatus, string> = {
   not_contacted: 'bg-gray-50 text-gray-500 border-gray-200',
   contacted:     'bg-blue-50 text-blue-700 border-blue-200',
   converted:     'bg-green-50 text-green-700 border-green-200',
+}
+
+const STATUS_COLOR: Record<EventStatus, string> = {
+  new:       'text-gray-500 bg-gray-100',
+  active:    'text-blue-600 bg-blue-50',
+  contacted: 'text-purple-600 bg-purple-50',
+  resolved:  'text-emerald-600 bg-emerald-50',
 }
 
 function initials(name: string) {
@@ -45,6 +52,24 @@ function loadOutreach(): Record<string, OutreachStatus> {
   }
 }
 
+function loadActivityLog(): ActivityEntry[] {
+  try {
+    return JSON.parse(localStorage.getItem('lp_activity') ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function relativeTime(isoStr: string): string {
+  const diff = Date.now() - new Date(isoStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const [customers, setCustomers] = useState<CustomerSummary[]>([])
@@ -54,6 +79,9 @@ export default function Dashboard() {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'days', dir: 'asc' })
   const [outreach, setOutreach] = useState<Record<string, OutreachStatus>>(loadOutreach)
   const [confThreshold, setConfThreshold] = useState(50)
+  const [search, setSearch] = useState('')
+  const [activityLog, setActivityLog] = useState<ActivityEntry[]>(loadActivityLog)
+  const [activityOpen, setActivityOpen] = useState(true)
 
   useEffect(() => {
     api.listCustomers()
@@ -62,7 +90,11 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Persist outreach status to localStorage whenever it changes
+  // Refresh activity log when returning from CustomerDetail
+  useEffect(() => {
+    setActivityLog(loadActivityLog())
+  }, [customers])
+
   useEffect(() => {
     localStorage.setItem('lp_outreach', JSON.stringify(outreach))
   }, [outreach])
@@ -74,7 +106,14 @@ export default function Dashboard() {
     outreach[id] ?? 'not_contacted'
 
   const filtered = useMemo(() => {
-    const statusFiltered = filter === 'all' ? customers : customers.filter(c => c.life_event.status === filter)
+    const q = search.toLowerCase().trim()
+    const searched = q
+      ? customers.filter(c =>
+          c.name.toLowerCase().includes(q) ||
+          c.account_number.toLowerCase().includes(q)
+        )
+      : customers
+    const statusFiltered = filter === 'all' ? searched : searched.filter(c => c.life_event.status === filter)
     const thresholded = statusFiltered.filter(c => c.life_event.confidence * 100 >= confThreshold)
     return [...thresholded].sort((a, b) => {
       const dir = sort.dir === 'asc' ? 1 : -1
@@ -86,7 +125,7 @@ export default function Dashboard() {
         default: return 0
       }
     })
-  }, [customers, filter, sort, confThreshold])
+  }, [customers, filter, sort, confThreshold, search])
 
   const stats = useMemo(() => {
     const needAction = customers.filter(c => ['new', 'active'].includes(c.life_event.status))
@@ -104,6 +143,17 @@ export default function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customers, outreach])
 
+  const eventBreakdown = useMemo(() => {
+    const counts = new Map<LifeEventType, number>()
+    for (const c of customers) {
+      counts.set(c.life_event.event_type, (counts.get(c.life_event.event_type) ?? 0) + 1)
+    }
+    const max = Math.max(...counts.values(), 1)
+    return (Object.keys(EVENT_TYPE_CONFIG) as LifeEventType[])
+      .filter(t => counts.has(t))
+      .map(t => ({ type: t, count: counts.get(t)!, pct: (counts.get(t)! / max) * 100 }))
+  }, [customers])
+
   const toggleSort = (key: SortKey) =>
     setSort(prev => prev.key === key
       ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
@@ -114,10 +164,6 @@ export default function Dashboard() {
       {sort.key === k ? (sort.dir === 'desc' ? '↓' : '↑') : '↕'}
     </span>
   )
-
-  // Denominator for "Showing X of Y" — customers passing status filter only
-  const statusFiltered = filter === 'all' ? customers : customers.filter(c => c.life_event.status === filter)
-  const afterStatusCount = statusFiltered.filter(c => c.life_event.confidence * 100 >= confThreshold).length
 
   return (
     <div className="px-8 py-8">
@@ -149,36 +195,24 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Pipeline + Confidence controls */}
+      {/* Pipeline + Event Breakdown + Confidence */}
       {!loading && !error && (
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          {/* Outreach pipeline summary */}
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          {/* Outreach pipeline */}
           <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Outreach Pipeline</p>
-            <div className="flex items-center gap-3">
-              {/* Progress bar */}
-              <div className="flex-1 flex h-2 rounded-full overflow-hidden bg-gray-100">
-                {pipeline.not_contacted > 0 && (
-                  <div
-                    className="bg-gray-300 transition-all"
-                    style={{ width: `${(pipeline.not_contacted / stats.total) * 100}%` }}
-                  />
-                )}
-                {pipeline.contacted > 0 && (
-                  <div
-                    className="bg-blue-400 transition-all"
-                    style={{ width: `${(pipeline.contacted / stats.total) * 100}%` }}
-                  />
-                )}
-                {pipeline.converted > 0 && (
-                  <div
-                    className="bg-green-400 transition-all"
-                    style={{ width: `${(pipeline.converted / stats.total) * 100}%` }}
-                  />
-                )}
-              </div>
+            <div className="flex h-2 rounded-full overflow-hidden bg-gray-100 mb-2.5">
+              {pipeline.not_contacted > 0 && (
+                <div className="bg-gray-300 transition-all" style={{ width: `${(pipeline.not_contacted / stats.total) * 100}%` }} />
+              )}
+              {pipeline.contacted > 0 && (
+                <div className="bg-blue-400 transition-all" style={{ width: `${(pipeline.contacted / stats.total) * 100}%` }} />
+              )}
+              {pipeline.converted > 0 && (
+                <div className="bg-green-400 transition-all" style={{ width: `${(pipeline.converted / stats.total) * 100}%` }} />
+              )}
             </div>
-            <div className="flex items-center gap-4 mt-2.5 text-xs">
+            <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1.5 text-gray-500">
                 <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
                 {pipeline.not_contacted} not contacted
@@ -191,6 +225,29 @@ export default function Dashboard() {
                 <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
                 {pipeline.converted} converted
               </span>
+            </div>
+          </div>
+
+          {/* Event type breakdown */}
+          <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Event Breakdown</p>
+            <div className="space-y-2">
+              {eventBreakdown.map(({ type, count, pct }) => {
+                const cfg = EVENT_TYPE_CONFIG[type]
+                return (
+                  <div key={type} className="flex items-center gap-2">
+                    <span className="text-sm w-4 text-center leading-none">{cfg.icon}</span>
+                    <span className="text-[11px] text-gray-500 w-24 truncate">{cfg.label}</span>
+                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${cfg.bar}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[11px] font-semibold text-gray-600 tabular-nums w-3 text-right">{count}</span>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -219,24 +276,56 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Filter + sort bar */}
+      {/* Filter + search + sort bar */}
       {!loading && !error && (
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex gap-1">
-            {STATUS_FILTERS.map(f => (
-              <button
-                key={f.value}
-                onClick={() => setFilter(f.value)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  filter === f.value
-                    ? 'bg-accent text-white'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                }`}
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <div className="flex items-center gap-2 flex-1">
+            {/* Status filters */}
+            <div className="flex gap-1">
+              {STATUS_FILTERS.map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setFilter(f.value)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    filter === f.value
+                      ? 'bg-accent text-white'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search */}
+            <div className="relative ml-2">
+              <svg
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"
+                fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"
               >
-                {f.label}
-              </button>
-            ))}
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search name or account…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent/40 w-52 transition-colors"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
+
           <div className="flex items-center gap-3">
             <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
               <button
@@ -260,8 +349,8 @@ export default function Dashboard() {
                 Highest Confidence
               </button>
             </div>
-            <span className="text-xs text-gray-400">
-              Showing {afterStatusCount} of {customers.length}
+            <span className="text-xs text-gray-400 whitespace-nowrap">
+              Showing {filtered.length} of {customers.length}
             </span>
           </div>
         </div>
@@ -288,7 +377,7 @@ export default function Dashboard() {
 
       {/* Table */}
       {!loading && !error && (
-        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-4">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/60">
@@ -420,9 +509,74 @@ export default function Dashboard() {
 
           {filtered.length === 0 && (
             <div className="py-12 text-center text-sm text-gray-400">
-              {confThreshold > 0
+              {search
+                ? `No customers match "${search}".`
+                : confThreshold > 0
                 ? `No customers above ${confThreshold}% confidence with this filter.`
                 : 'No customers match this filter.'}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Activity log */}
+      {!loading && !error && (
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <button
+            onClick={() => setActivityOpen(o => !o)}
+            className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/60 transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="text-sm font-semibold text-gray-900">Activity Log</span>
+              {activityLog.length > 0 && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-accent/10 text-accent rounded-full">
+                  {activityLog.length}
+                </span>
+              )}
+            </div>
+            <svg
+              className={`w-4 h-4 text-gray-400 transition-transform ${activityOpen ? '' : '-rotate-90'}`}
+              fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"
+            >
+              <path d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {activityOpen && (
+            <div className="border-t border-gray-50">
+              {activityLog.length === 0 ? (
+                <p className="text-xs text-gray-400 px-6 py-5">
+                  No status changes recorded yet. Update a customer's status to see it tracked here.
+                </p>
+              ) : (
+                <ul className="divide-y divide-gray-50">
+                  {activityLog.map(entry => (
+                    <li
+                      key={entry.id}
+                      className="flex items-center gap-3 px-6 py-3 hover:bg-gray-50/40 transition-colors cursor-pointer"
+                      onClick={() => navigate(`/customers/${entry.customerId}`)}
+                    >
+                      <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center text-[10px] font-bold text-accent flex-shrink-0">
+                        {initials(entry.customerName)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold text-gray-800">{entry.customerName}</span>
+                        <span className="text-xs text-gray-400 mx-1.5">moved</span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_COLOR[entry.fromStatus]}`}>
+                          {entry.fromStatus}
+                        </span>
+                        <svg className="inline w-3 h-3 text-gray-300 mx-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M5 12h14M12 5l7 7-7 7" />
+                        </svg>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_COLOR[entry.toStatus]}`}>
+                          {entry.toStatus}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-gray-400 flex-shrink-0">{relativeTime(entry.timestamp)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
         </div>
