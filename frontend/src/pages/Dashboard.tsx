@@ -17,26 +17,26 @@ const STATUS_FILTERS: { value: EventStatus | 'all'; label: string }[] = [
   { value: 'resolved',  label: 'Resolved'  },
 ]
 
-const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string; color: string; bar: string }> = {
-  relocation:    { label: 'Relocation',    icon: '🗺️', color: 'text-violet-700 bg-violet-50', bar: 'bg-violet-400' },
-  new_baby:      { label: 'New Baby',      icon: '👶', color: 'text-pink-700 bg-pink-50',     bar: 'bg-pink-400'   },
-  marriage:      { label: 'Marriage',      icon: '💍', color: 'text-rose-700 bg-rose-50',     bar: 'bg-rose-400'   },
-  home_purchase: { label: 'Home Purchase', icon: '🏠', color: 'text-amber-700 bg-amber-50',   bar: 'bg-amber-400'  },
-  job_change:    { label: 'Job Change',    icon: '💼', color: 'text-blue-700 bg-blue-50',     bar: 'bg-blue-400'   },
-  retirement:    { label: 'Retirement',    icon: '🌅', color: 'text-emerald-700 bg-emerald-50',bar: 'bg-emerald-400'},
+const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string }> = {
+  relocation:    { label: 'Relocation',    icon: '🗺️' },
+  new_baby:      { label: 'New Baby',      icon: '👶' },
+  marriage:      { label: 'Marriage',      icon: '💍' },
+  home_purchase: { label: 'Home Purchase', icon: '🏠' },
+  job_change:    { label: 'Job Change',    icon: '💼' },
+  retirement:    { label: 'Retirement',    icon: '🌅' },
 }
 
 const OUTREACH_STYLE: Record<OutreachStatus, string> = {
-  not_contacted: 'bg-gray-50 text-gray-500 border-gray-200',
-  contacted:     'bg-blue-50 text-blue-700 border-blue-200',
-  converted:     'bg-green-50 text-green-700 border-green-200',
+  not_contacted: 'bg-gray-50 text-gray-400 border-gray-200',
+  contacted:     'bg-accent/10 text-accent border-accent/20',
+  converted:     'bg-gray-900 text-white border-gray-900',
 }
 
 const STATUS_COLOR: Record<EventStatus, string> = {
   new:       'text-gray-500 bg-gray-100',
-  active:    'text-blue-600 bg-blue-50',
-  contacted: 'text-purple-600 bg-purple-50',
-  resolved:  'text-emerald-600 bg-emerald-50',
+  active:    'text-accent bg-accent/10',
+  contacted: 'text-gray-600 bg-gray-100',
+  resolved:  'text-gray-400 bg-gray-50',
 }
 
 function initials(name: string) {
@@ -203,26 +203,26 @@ export default function Dashboard() {
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Outreach Pipeline</p>
             <div className="flex h-2 rounded-full overflow-hidden bg-gray-100 mb-2.5">
               {pipeline.not_contacted > 0 && (
-                <div className="bg-gray-300 transition-all" style={{ width: `${(pipeline.not_contacted / stats.total) * 100}%` }} />
+                <div className="bg-gray-200 transition-all" style={{ width: `${(pipeline.not_contacted / stats.total) * 100}%` }} />
               )}
               {pipeline.contacted > 0 && (
-                <div className="bg-blue-400 transition-all" style={{ width: `${(pipeline.contacted / stats.total) * 100}%` }} />
+                <div className="bg-accent/60 transition-all" style={{ width: `${(pipeline.contacted / stats.total) * 100}%` }} />
               )}
               {pipeline.converted > 0 && (
-                <div className="bg-green-400 transition-all" style={{ width: `${(pipeline.converted / stats.total) * 100}%` }} />
+                <div className="bg-gray-800 transition-all" style={{ width: `${(pipeline.converted / stats.total) * 100}%` }} />
               )}
             </div>
             <div className="flex items-center gap-4 text-xs">
-              <span className="flex items-center gap-1.5 text-gray-500">
-                <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <span className="w-2 h-2 rounded-full bg-gray-200 flex-shrink-0" />
                 {pipeline.not_contacted} not contacted
               </span>
-              <span className="flex items-center gap-1.5 text-blue-600 font-medium">
-                <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+              <span className="flex items-center gap-1.5 text-accent font-medium">
+                <span className="w-2 h-2 rounded-full bg-accent/60 flex-shrink-0" />
                 {pipeline.contacted} contacted
               </span>
-              <span className="flex items-center gap-1.5 text-green-600 font-medium">
-                <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+              <span className="flex items-center gap-1.5 text-gray-700 font-medium">
+                <span className="w-2 h-2 rounded-full bg-gray-800 flex-shrink-0" />
                 {pipeline.converted} converted
               </span>
             </div>
@@ -240,7 +240,7 @@ export default function Dashboard() {
                     <span className="text-[11px] text-gray-500 w-24 truncate">{cfg.label}</span>
                     <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full transition-all ${cfg.bar}`}
+                        className="h-full rounded-full transition-all bg-accent/70"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -441,7 +441,7 @@ export default function Dashboard() {
                     {/* Life Event */}
                     <td className="px-5 py-3.5">
                       <div>
-                        <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${evConfig.color}`}>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                           {evConfig.icon} {evConfig.label}
                         </span>
                         <p className="text-xs text-gray-500 mt-1 max-w-[180px] truncate">
@@ -485,7 +485,7 @@ export default function Dashboard() {
                           {ev.days_since_first_signal}d ago
                         </span>
                         {ev.days_since_first_signal <= 7 && ev.status !== 'resolved' && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-full leading-none">
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-gray-900 text-white rounded-full leading-none">
                             Urgent
                           </span>
                         )}

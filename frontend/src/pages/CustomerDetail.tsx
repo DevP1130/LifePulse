@@ -35,13 +35,13 @@ const STATUS_ACTION_LABEL: Record<EventStatus, string> = {
   resolved:  'Reopen',
 }
 
-const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string; color: string }> = {
-  relocation:    { label: 'Relocation',    icon: '🗺️', color: 'text-violet-700 bg-violet-50 border-violet-100'  },
-  new_baby:      { label: 'New Baby',      icon: '👶', color: 'text-pink-700 bg-pink-50 border-pink-100'        },
-  marriage:      { label: 'Marriage',      icon: '💍', color: 'text-rose-700 bg-rose-50 border-rose-100'        },
-  home_purchase: { label: 'Home Purchase', icon: '🏠', color: 'text-amber-700 bg-amber-50 border-amber-100'     },
-  job_change:    { label: 'Job Change',    icon: '💼', color: 'text-blue-700 bg-blue-50 border-blue-100'        },
-  retirement:    { label: 'Retirement',    icon: '🌅', color: 'text-emerald-700 bg-emerald-50 border-emerald-100'},
+const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string }> = {
+  relocation:    { label: 'Relocation',    icon: '🗺️' },
+  new_baby:      { label: 'New Baby',      icon: '👶' },
+  marriage:      { label: 'Marriage',      icon: '💍' },
+  home_purchase: { label: 'Home Purchase', icon: '🏠' },
+  job_change:    { label: 'Job Change',    icon: '💼' },
+  retirement:    { label: 'Retirement',    icon: '🌅' },
 }
 
 export default function CustomerDetail() {
@@ -169,7 +169,7 @@ export default function CustomerDetail() {
 
             {/* Life event badge + detail */}
             <div className="flex items-center gap-3 mt-3">
-              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${evConfig.color}`}>
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
                 {evConfig.icon} {evConfig.label}
               </span>
 

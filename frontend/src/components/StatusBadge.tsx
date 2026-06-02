@@ -1,10 +1,10 @@
 import type { EventStatus } from '../types'
 
 const CONFIG: Record<EventStatus, { dot: string; text: string; label: string }> = {
-  new:       { dot: 'bg-slate-400',   text: 'text-slate-500',   label: 'New'       },
-  active:    { dot: 'bg-accent',      text: 'text-accent',      label: 'Active'    },
-  contacted: { dot: 'bg-emerald-500', text: 'text-emerald-600', label: 'Contacted' },
-  resolved:  { dot: 'bg-gray-300',    text: 'text-gray-400',    label: 'Resolved'  },
+  new:       { dot: 'bg-gray-300',  text: 'text-gray-400', label: 'New'       },
+  active:    { dot: 'bg-accent',    text: 'text-accent',   label: 'Active'    },
+  contacted: { dot: 'bg-gray-500',  text: 'text-gray-600', label: 'Contacted' },
+  resolved:  { dot: 'bg-gray-300',  text: 'text-gray-400', label: 'Resolved'  },
 }
 
 interface Props {
