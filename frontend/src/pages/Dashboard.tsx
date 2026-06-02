@@ -7,6 +7,7 @@ import MiniBar from '../components/MiniBar'
 
 type SortKey = 'confidence' | 'churn_risk' | 'days' | 'name'
 type SortDir = 'asc' | 'desc'
+type OutreachStatus = 'not_contacted' | 'contacted' | 'converted'
 
 const STATUS_FILTERS: { value: EventStatus | 'all'; label: string }[] = [
   { value: 'all',       label: 'All'       },
@@ -25,8 +26,23 @@ const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string; co
   retirement:    { label: 'Retirement',    icon: '🌅', color: 'text-emerald-700 bg-emerald-50'},
 }
 
+const OUTREACH_STYLE: Record<OutreachStatus, string> = {
+  not_contacted: 'bg-gray-50 text-gray-500 border-gray-200',
+  contacted:     'bg-blue-50 text-blue-700 border-blue-200',
+  converted:     'bg-green-50 text-green-700 border-green-200',
+}
+
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2)
+}
+
+function loadOutreach(): Record<string, OutreachStatus> {
+  try {
+    const raw = localStorage.getItem('lp_outreach')
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
 }
 
 export default function Dashboard() {
@@ -36,6 +52,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<EventStatus | 'all'>('all')
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'days', dir: 'asc' })
+  const [outreach, setOutreach] = useState<Record<string, OutreachStatus>>(loadOutreach)
+  const [confThreshold, setConfThreshold] = useState(50)
 
   useEffect(() => {
     api.listCustomers()
@@ -44,9 +62,21 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Persist outreach status to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('lp_outreach', JSON.stringify(outreach))
+  }, [outreach])
+
+  const updateOutreach = (id: string, status: OutreachStatus) =>
+    setOutreach(prev => ({ ...prev, [id]: status }))
+
+  const getOutreach = (id: string): OutreachStatus =>
+    outreach[id] ?? 'not_contacted'
+
   const filtered = useMemo(() => {
-    const base = filter === 'all' ? customers : customers.filter(c => c.life_event.status === filter)
-    return [...base].sort((a, b) => {
+    const statusFiltered = filter === 'all' ? customers : customers.filter(c => c.life_event.status === filter)
+    const thresholded = statusFiltered.filter(c => c.life_event.confidence * 100 >= confThreshold)
+    return [...thresholded].sort((a, b) => {
       const dir = sort.dir === 'asc' ? 1 : -1
       switch (sort.key) {
         case 'confidence': return dir * (a.life_event.confidence - b.life_event.confidence)
@@ -56,7 +86,7 @@ export default function Dashboard() {
         default: return 0
       }
     })
-  }, [customers, filter, sort])
+  }, [customers, filter, sort, confThreshold])
 
   const stats = useMemo(() => {
     const needAction = customers.filter(c => ['new', 'active'].includes(c.life_event.status))
@@ -66,6 +96,13 @@ export default function Dashboard() {
       ? customers.reduce((s, c) => s + c.life_event.churn_risk, 0) / customers.length : 0
     return { total: customers.length, needAction: needAction.length, avgConf, avgRisk }
   }, [customers])
+
+  const pipeline = useMemo(() => {
+    const counts = { not_contacted: 0, contacted: 0, converted: 0 }
+    for (const c of customers) counts[getOutreach(c.id)]++
+    return counts
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers, outreach])
 
   const toggleSort = (key: SortKey) =>
     setSort(prev => prev.key === key
@@ -77,6 +114,10 @@ export default function Dashboard() {
       {sort.key === k ? (sort.dir === 'desc' ? '↓' : '↑') : '↕'}
     </span>
   )
+
+  // Denominator for "Showing X of Y" — customers passing status filter only
+  const statusFiltered = filter === 'all' ? customers : customers.filter(c => c.life_event.status === filter)
+  const afterStatusCount = statusFiltered.filter(c => c.life_event.confidence * 100 >= confThreshold).length
 
   return (
     <div className="px-8 py-8">
@@ -90,12 +131,12 @@ export default function Dashboard() {
 
       {/* Stats strip */}
       {!loading && !error && (
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-4 gap-4 mb-4">
           {[
-            { label: 'Monitored',      value: stats.total,                                    sub: 'total customers'      },
-            { label: 'Needs Outreach', value: stats.needAction,                               sub: 'new or active', accent: true },
-            { label: 'Avg. Confidence',value: `${Math.round(stats.avgConf * 100)}%`,          sub: 'detection accuracy'   },
-            { label: 'Avg. Churn Risk',value: `${Math.round(stats.avgRisk * 100)}%`,          sub: 'retention priority', warn: stats.avgRisk > 0.55 },
+            { label: 'Monitored',       value: stats.total,                           sub: 'total customers'                },
+            { label: 'Needs Outreach',  value: stats.needAction,                      sub: 'new or active', accent: true    },
+            { label: 'Avg. Confidence', value: `${Math.round(stats.avgConf * 100)}%`, sub: 'detection accuracy'             },
+            { label: 'Avg. Churn Risk', value: `${Math.round(stats.avgRisk * 100)}%`, sub: 'retention priority', warn: stats.avgRisk > 0.55 },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-5 py-4">
               <p className={`text-2xl font-bold ${s.accent ? 'text-accent' : s.warn ? 'text-amber-500' : 'text-gray-900'}`}>
@@ -105,6 +146,76 @@ export default function Dashboard() {
               <p className="text-xs text-gray-400">{s.sub}</p>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pipeline + Confidence controls */}
+      {!loading && !error && (
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          {/* Outreach pipeline summary */}
+          <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Outreach Pipeline</p>
+            <div className="flex items-center gap-3">
+              {/* Progress bar */}
+              <div className="flex-1 flex h-2 rounded-full overflow-hidden bg-gray-100">
+                {pipeline.not_contacted > 0 && (
+                  <div
+                    className="bg-gray-300 transition-all"
+                    style={{ width: `${(pipeline.not_contacted / stats.total) * 100}%` }}
+                  />
+                )}
+                {pipeline.contacted > 0 && (
+                  <div
+                    className="bg-blue-400 transition-all"
+                    style={{ width: `${(pipeline.contacted / stats.total) * 100}%` }}
+                  />
+                )}
+                {pipeline.converted > 0 && (
+                  <div
+                    className="bg-green-400 transition-all"
+                    style={{ width: `${(pipeline.converted / stats.total) * 100}%` }}
+                  />
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-4 mt-2.5 text-xs">
+              <span className="flex items-center gap-1.5 text-gray-500">
+                <span className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
+                {pipeline.not_contacted} not contacted
+              </span>
+              <span className="flex items-center gap-1.5 text-blue-600 font-medium">
+                <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                {pipeline.contacted} contacted
+              </span>
+              <span className="flex items-center gap-1.5 text-green-600 font-medium">
+                <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+                {pipeline.converted} converted
+              </span>
+            </div>
+          </div>
+
+          {/* Confidence threshold slider */}
+          <div className="bg-white rounded-xl border border-gray-100 px-5 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Min. Confidence</p>
+              <span className="text-xs font-bold text-gray-800 tabular-nums">{confThreshold}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={confThreshold}
+              onChange={e => setConfThreshold(Number(e.target.value))}
+              className="w-full h-1.5 rounded-full cursor-pointer appearance-none bg-gray-200"
+              style={{ accentColor: '#5B5EA6' }}
+            />
+            <div className="flex justify-between text-[10px] text-gray-400 mt-1.5">
+              <span>0%</span>
+              <span>50%</span>
+              <span>100%</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -127,7 +238,6 @@ export default function Dashboard() {
             ))}
           </div>
           <div className="flex items-center gap-3">
-            {/* Sort preset toggle */}
             <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
               <button
                 onClick={() => setSort({ key: 'days', dir: 'asc' })}
@@ -151,7 +261,7 @@ export default function Dashboard() {
               </button>
             </div>
             <span className="text-xs text-gray-400">
-              {filtered.length} customer{filtered.length !== 1 ? 's' : ''}
+              Showing {afterStatusCount} of {customers.length}
             </span>
           </div>
         </div>
@@ -188,9 +298,7 @@ export default function Dashboard() {
                 >
                   Customer <SortChevron k="name" />
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400">
-                  Life Event
-                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400">Life Event</th>
                 <th
                   className="px-5 py-3 text-left text-xs font-semibold text-gray-400 cursor-pointer hover:text-gray-600 select-none"
                   onClick={() => toggleSort('confidence')}
@@ -203,12 +311,8 @@ export default function Dashboard() {
                 >
                   Churn Risk <SortChevron k="churn_risk" />
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400">
-                  Status
-                </th>
-                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400">
-                  Signals
-                </th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400">Event Status</th>
+                <th className="px-5 py-3 text-left text-xs font-semibold text-gray-400">Outreach</th>
                 <th
                   className="px-5 py-3 text-left text-xs font-semibold text-gray-400 cursor-pointer hover:text-gray-600 select-none"
                   onClick={() => toggleSort('days')}
@@ -223,6 +327,7 @@ export default function Dashboard() {
                 const ev = c.life_event
                 const ini = initials(c.name)
                 const evConfig = EVENT_TYPE_CONFIG[ev.event_type]
+                const os = getOutreach(c.id)
                 return (
                   <tr
                     key={c.id}
@@ -266,16 +371,22 @@ export default function Dashboard() {
                       <MiniBar value={ev.churn_risk} variant="risk" />
                     </td>
 
-                    {/* Status */}
+                    {/* Event Status */}
                     <td className="px-5 py-3.5">
                       <StatusBadge status={ev.status} size="sm" />
                     </td>
 
-                    {/* Signals */}
-                    <td className="px-5 py-3.5">
-                      <span className="text-xs font-medium text-gray-600">
-                        {ev.signals.length} detected
-                      </span>
+                    {/* Outreach status */}
+                    <td className="px-5 py-3.5" onClick={e => e.stopPropagation()}>
+                      <select
+                        value={os}
+                        onChange={e => updateOutreach(c.id, e.target.value as OutreachStatus)}
+                        className={`text-[11px] font-semibold rounded-full px-2.5 py-1 border cursor-pointer outline-none focus:ring-1 focus:ring-accent/20 transition-colors ${OUTREACH_STYLE[os]}`}
+                      >
+                        <option value="not_contacted">Not Contacted</option>
+                        <option value="contacted">Contacted</option>
+                        <option value="converted">Converted</option>
+                      </select>
                     </td>
 
                     {/* Days */}
@@ -309,7 +420,9 @@ export default function Dashboard() {
 
           {filtered.length === 0 && (
             <div className="py-12 text-center text-sm text-gray-400">
-              No customers match this filter.
+              {confThreshold > 0
+                ? `No customers above ${confThreshold}% confidence with this filter.`
+                : 'No customers match this filter.'}
             </div>
           )}
         </div>
