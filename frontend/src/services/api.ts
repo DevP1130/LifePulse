@@ -1,4 +1,4 @@
-import type { CustomerSummary, CustomerDetail, ConversationStarter, EventStatus } from '../types'
+import type { CustomerSummary, CustomerDetail, ConversationStarter, EventStatus, AnalyticsData } from '../types'
 
 const BASE = 'http://localhost:8000'
 
@@ -24,4 +24,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     }),
+
+  getAnalytics: () =>
+    request<AnalyticsData>('/api/analytics'),
 }

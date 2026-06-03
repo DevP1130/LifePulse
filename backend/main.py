@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.customers import router as customers_router
+from app.routes.analytics import router as analytics_router
 
 app = FastAPI(
     title="LifePulse API",
@@ -18,6 +19,7 @@ app.add_middleware(
 )
 
 app.include_router(customers_router)
+app.include_router(analytics_router)
 
 
 @app.get("/health")

@@ -50,6 +50,24 @@ export interface CustomerDetail extends CustomerSummary {
   transactions: Transaction[]
 }
 
+export interface AnalyticsData {
+  total_customers: number
+  total_signals: number
+  avg_confidence: number
+  avg_churn_risk: number
+  pipeline_funnel: { new: number; active: number; contacted: number; resolved: number }
+  event_breakdown: Record<string, {
+    count: number
+    contacted_count: number
+    resolved_count: number
+    contacted_pct: number
+    resolved_pct: number
+    avg_confidence: number
+  }>
+  signals_by_week: { week: string; count: number }[]
+  confidence_distribution: { label: string; count: number }[]
+}
+
 export interface ActivityEntry {
   id: string
   customerId: string

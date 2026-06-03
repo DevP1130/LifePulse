@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 import Dashboard from './pages/Dashboard'
 import CustomerDetail from './pages/CustomerDetail'
+import Analytics from './pages/Analytics'
 import Layout from './components/Layout'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -28,6 +29,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <Layout><CustomerDetail /></Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/analytics"
+        element={
+          <ProtectedRoute>
+            <Layout><Analytics /></Layout>
           </ProtectedRoute>
         }
       />
