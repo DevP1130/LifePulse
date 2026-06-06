@@ -86,5 +86,19 @@ class ConversationStarter(BaseModel):
     generated_date: date
 
 
+class SignalSummary(BaseModel):
+    customer_id: str
+    summary: str
+    generated_date: date
+
+
+class EmailDraft(BaseModel):
+    customer_id: str
+    subject: str
+    body: str
+    tone: str
+    generated_date: date
+
+
 class StatusUpdate(BaseModel):
     status: EventStatus

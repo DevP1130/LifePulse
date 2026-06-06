@@ -1,4 +1,4 @@
-import type { CustomerSummary, CustomerDetail, ConversationStarter, EventStatus, AnalyticsData } from '../types'
+import type { CustomerSummary, CustomerDetail, ConversationStarter, EmailDraft, EventStatus, SignalSummary, AnalyticsData } from '../types'
 
 const BASE = 'http://localhost:8000'
 
@@ -24,6 +24,12 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     }),
+
+  getSignalSummary: (id: string) =>
+    request<SignalSummary>(`/api/customers/${id}/signal-summary`),
+
+  getEmailDraft: (id: string, tone: string = 'conversational') =>
+    request<EmailDraft>(`/api/customers/${id}/email?tone=${tone}`),
 
   getAnalytics: () =>
     request<AnalyticsData>('/api/analytics'),

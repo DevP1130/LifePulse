@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
-import type { CustomerDetail as CustomerDetailType, ConversationStarter, EventStatus, LifeEventType, ActivityEntry } from '../types'
+import type { CustomerDetail as CustomerDetailType, ConversationStarter, EmailDraft, EventStatus, LifeEventType, ActivityEntry, SignalSummary } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
 import SignalFeed from '../components/SignalFeed'
@@ -50,8 +50,13 @@ export default function CustomerDetail() {
 
   const [customer, setCustomer] = useState<CustomerDetailType | null>(null)
   const [starter, setStarter] = useState<ConversationStarter | null>(null)
+  const [signalSummary, setSignalSummary] = useState<SignalSummary | null>(null)
+  const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null)
   const [loadingCustomer, setLoadingCustomer] = useState(true)
   const [loadingStarter, setLoadingStarter] = useState(true)
+  const [loadingSummary, setLoadingSummary] = useState(true)
+  const [loadingEmail, setLoadingEmail] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [tone, setTone] = useState<'formal' | 'conversational' | 'empathetic'>('conversational')
@@ -61,6 +66,7 @@ export default function CustomerDetail() {
     Promise.all([
       api.getCustomer(id).then(setCustomer),
       api.getStarter(id, tone).then(setStarter),
+      api.getSignalSummary(id).then(setSignalSummary).finally(() => setLoadingSummary(false)),
     ])
       .catch(() => setError('Failed to load customer data.'))
       .finally(() => {
@@ -73,6 +79,7 @@ export default function CustomerDetail() {
     if (!id || newTone === tone) return
     setTone(newTone)
     setLoadingStarter(true)
+    if (emailDraft) setEmailDraft(null)
     try {
       const refreshed = await api.getStarter(id, newTone)
       setStarter(refreshed)
@@ -81,6 +88,26 @@ export default function CustomerDetail() {
     } finally {
       setLoadingStarter(false)
     }
+  }
+
+  const handleGenerateEmail = async () => {
+    if (!id) return
+    setLoadingEmail(true)
+    try {
+      const draft = await api.getEmailDraft(id, tone)
+      setEmailDraft(draft)
+    } catch {
+      // silent fail
+    } finally {
+      setLoadingEmail(false)
+    }
+  }
+
+  const handleCopyEmail = async () => {
+    if (!emailDraft) return
+    await navigator.clipboard.writeText(`Subject: ${emailDraft.subject}\n\n${emailDraft.body}`)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   const handleStatusChange = async (newStatus: EventStatus) => {
@@ -229,6 +256,19 @@ export default function CustomerDetail() {
         </div>
       </div>
 
+      {/* Signal summary */}
+      <div className="bg-white rounded-xl border border-gray-100 px-6 py-4 mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Detection Rationale</p>
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-accent/10 text-accent rounded-full">Claude</span>
+        </div>
+        {loadingSummary ? (
+          <p className="text-sm text-gray-300 animate-pulse">Generating analysis…</p>
+        ) : (
+          <p className="text-sm text-gray-600 leading-relaxed">{signalSummary?.summary}</p>
+        )}
+      </div>
+
       {/* Signal feed + conversation starter — two columns */}
       <div className="grid grid-cols-5 gap-6 mb-6">
         <div className="col-span-3">
@@ -271,6 +311,65 @@ export default function CustomerDetail() {
           </div>
 
           <ConversationStarterCard starter={starter!} loading={loadingStarter} />
+
+          {/* Email draft */}
+          <div className="bg-white rounded-xl border border-gray-100 px-4 py-3.5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Outreach Email</p>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-accent/10 text-accent rounded-full">Claude</span>
+              </div>
+              {emailDraft && !loadingEmail && (
+                <button
+                  onClick={handleGenerateEmail}
+                  className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  Regenerate
+                </button>
+              )}
+            </div>
+
+            {!emailDraft && !loadingEmail && (
+              <button
+                onClick={handleGenerateEmail}
+                className="w-full py-2 text-xs font-semibold text-accent border border-accent/30 rounded-lg hover:bg-accent/5 transition-colors"
+              >
+                Draft Outreach Email
+              </button>
+            )}
+
+            {loadingEmail && (
+              <div className="flex items-center justify-center gap-2 py-4 text-gray-400">
+                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
+                <span className="text-xs">Drafting email…</span>
+              </div>
+            )}
+
+            {emailDraft && !loadingEmail && (
+              <div>
+                <div className="bg-gray-50 rounded-lg px-3 py-2 mb-3">
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Subject</p>
+                  <p className="text-xs font-medium text-gray-800">{emailDraft.subject}</p>
+                </div>
+                <div className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto pr-1">
+                  {emailDraft.body}
+                </div>
+                <button
+                  onClick={handleCopyEmail}
+                  className={`mt-3 w-full py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                    copied
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-800'
+                  }`}
+                >
+                  {copied ? 'Copied!' : 'Copy to Clipboard'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

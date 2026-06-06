@@ -50,6 +50,20 @@ export interface CustomerDetail extends CustomerSummary {
   transactions: Transaction[]
 }
 
+export interface SignalSummary {
+  customer_id: string
+  summary: string
+  generated_date: string
+}
+
+export interface EmailDraft {
+  customer_id: string
+  subject: string
+  body: string
+  tone: string
+  generated_date: string
+}
+
 export interface AnalyticsData {
   total_customers: number
   total_signals: number

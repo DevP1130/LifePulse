@@ -12,7 +12,7 @@ from datetime import date
 
 from dotenv import load_dotenv
 
-from app.models import ConversationStarter, CustomerDetail, EventStatus, LifeEventType
+from app.models import ConversationStarter, CustomerDetail, EmailDraft, EventStatus, LifeEventType, SignalSummary
 
 load_dotenv()
 
@@ -335,7 +335,151 @@ def _generate_from_templates(customer: CustomerDetail) -> ConversationStarter:
     )
 
 
-# ── Public entry point ────────────────────────────────────────────────────────
+# ── Signal summary ────────────────────────────────────────────────────────────
+
+_SUMMARY_SYSTEM = """You are a senior analyst at Capital One briefing relationship managers on customer alerts.
+
+Write a single paragraph (2-4 sentences) explaining why this customer was flagged. Your audience is the customer's RM — financially literate, not a data scientist. Use plain English. Focus on what the pattern of transactions reveals about the customer's life situation and why it matters for the relationship. Do not use jargon like "signal," "ML," or "confidence score." Write naturally, as if speaking directly to the RM before a call."""
+
+_SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {"summary": {"type": "string"}},
+    "required": ["summary"],
+    "additionalProperties": False,
+}
+
+
+def _summary_prompt(customer: CustomerDetail) -> str:
+    rel = customer.life_event
+    signals_text = "\n".join(
+        f"  - {s.label} at {s.merchant} (${s.amount:.2f}, {s.detected_date})"
+        for s in sorted(rel.signals, key=lambda x: x.detected_date)
+    )
+    return f"""Explain why this Capital One customer was flagged.
+
+Customer: {customer.name}, {customer.account_tenure_years}-year customer
+Life event: {rel.event_type} — {rel.event_summary}
+Confidence: {int(rel.confidence * 100)}%  |  Churn risk: {int(rel.churn_risk * 100)}%
+Days since first signal: {rel.days_since_first_signal}
+
+Transactions that triggered the flag:
+{signals_text}"""
+
+
+def generate_signal_summary(customer: CustomerDetail) -> SignalSummary:
+    if _client is not None:
+        try:
+            response = _client.messages.create(
+                model="claude-opus-4-7",
+                max_tokens=256,
+                system=[{"type": "text", "text": _SUMMARY_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+                messages=[{"role": "user", "content": _summary_prompt(customer)}],
+                output_config={"format": {"type": "json_schema", "json_schema": {
+                    "name": "signal_summary", "schema": _SUMMARY_SCHEMA, "strict": True,
+                }}},
+            )
+            data = json.loads(response.content[0].text)
+            return SignalSummary(customer_id=customer.id, summary=data["summary"], generated_date=date.today())
+        except Exception:
+            pass
+
+    # Fallback
+    rel = customer.life_event
+    labels = [s.label for s in rel.signals[:3]]
+    signals_str = ", ".join(labels) + ("…" if len(rel.signals) > 3 else "")
+    return SignalSummary(
+        customer_id=customer.id,
+        summary=(
+            f"{customer.name} was flagged after {len(rel.signals)} transactions consistent with a "
+            f"{rel.event_type.value.replace('_', ' ')} — including {signals_str}. "
+            f"At {int(rel.confidence * 100)}% detection confidence and a {int(rel.churn_risk * 100)}% "
+            f"churn risk score, this is {'a high-priority' if rel.churn_risk > 0.65 else 'a priority'} "
+            f"outreach opportunity before the customer considers switching banks."
+        ),
+        generated_date=date.today(),
+    )
+
+
+# ── Email draft ───────────────────────────────────────────────────────────────
+
+_EMAIL_SYSTEM = """You are helping a Capital One relationship manager write a short, personalized outreach email to a customer experiencing a major life event.
+
+Rules:
+- Never reference transaction data, specific charges, merchants, or dollar amounts — you cannot reveal that you monitor spending
+- Acknowledge the life event naturally (e.g., "I heard you may be settling into a new city", "Congratulations on the upcoming wedding")
+- Be warm but professional — a genuine check-in, not a sales pitch
+- Mention 1-2 relevant Capital One products as helpful suggestions woven into the narrative, not listed as bullet points
+- End with a clear, low-pressure call to action (schedule a brief call, visit a branch, reply to the email)
+- 3-4 short paragraphs; sign off as "[Your Name] | Relationship Manager, Capital One"
+- Subject line: personal and specific, not generic or salesy"""
+
+_EMAIL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "subject": {"type": "string"},
+        "body":    {"type": "string"},
+    },
+    "required": ["subject", "body"],
+    "additionalProperties": False,
+}
+
+_EMAIL_FALLBACK: dict[str, tuple[str, str]] = {
+    "relocation":    ("Checking in as you settle into your new home", "Hi {first},\n\nI wanted to personally reach out as you go through this move. Transitions like this can shift a lot financially, and I'd love to make sure your Capital One accounts are set up to work for your new situation — especially if you're looking at a new home or rebuilding your emergency fund after moving costs.\n\nWould you have 15 minutes for a quick call this week? I'd love to connect.\n\n[Your Name] | Relationship Manager, Capital One"),
+    "new_baby":      ("Congratulations — and a quick note from Capital One", "Hi {first},\n\nCongratulations on the new arrival! I wanted to reach out personally, because a new baby changes the financial picture in ways that are worth talking through — from college savings to making sure your family is protected.\n\nWhenever you come up for air, I'd love to schedule a brief call to walk through a few options that might be useful right now.\n\n[Your Name] | Relationship Manager, Capital One"),
+    "marriage":      ("Congratulations — a note from your Capital One RM", "Hi {first},\n\nCongratulations on the upcoming wedding! I wanted to reach out because getting your finances aligned as a couple early on makes everything easier down the road — joint accounts, shared savings goals, and planning for what comes next.\n\nWould you and your partner have time for a quick call? Happy to work around your schedule.\n\n[Your Name] | Relationship Manager, Capital One"),
+    "home_purchase": ("A quick note as you close on your new home", "Hi {first},\n\nCongratulations on the home purchase — that's a big milestone! I wanted to touch base to make sure you have everything in place: an emergency fund post-closing, and a line of credit available for any renovations or unexpected costs that come with a new home.\n\nLet me know if you'd like to connect — even a quick 15-minute call can go a long way.\n\n[Your Name] | Relationship Manager, Capital One"),
+    "job_change":    ("A note from Capital One as you start your next chapter", "Hi {first},\n\nI heard you may be starting a new role — congratulations! Job transitions often come with financial to-dos that are easy to overlook: old 401(k)s, updated direct deposits, and building a cushion for the gap between paychecks.\n\nI'd love to connect briefly to make sure nothing falls through the cracks. Would a quick call work?\n\n[Your Name] | Relationship Manager, Capital One"),
+    "retirement":    ("Congratulations on your retirement — a note from Capital One", "Hi {first},\n\nCongratulations on your retirement — you've earned it! I wanted to reach out personally because this is one of the most important financial transitions there is, and I'd love to make sure your Capital One accounts are set up to support this next chapter.\n\nIf you have 20 minutes, I'd love to walk through a few things — income, savings strategy, and making the most of this stage. When works for you?\n\n[Your Name] | Relationship Manager, Capital One"),
+}
+
+
+def generate_email_draft(customer: CustomerDetail, tone: str = "conversational") -> EmailDraft:
+    tone_instruction = _TONE_INSTRUCTIONS.get(tone, _TONE_INSTRUCTIONS["conversational"])
+    rel = customer.life_event
+    first = customer.name.split()[0]
+
+    prompt = f"""Draft an outreach email from a Capital One RM to this customer.
+
+Customer: {customer.name} (first name: {first}), {customer.account_tenure_years}-year customer
+Life event: {rel.event_type} — {rel.event_summary}
+Churn risk: {int(rel.churn_risk * 100)}%
+Days since event started: {rel.days_since_first_signal}{tone_instruction}"""
+
+    if _client is not None:
+        try:
+            response = _client.messages.create(
+                model="claude-opus-4-7",
+                max_tokens=512,
+                system=[{"type": "text", "text": _EMAIL_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+                messages=[{"role": "user", "content": prompt}],
+                output_config={"format": {"type": "json_schema", "json_schema": {
+                    "name": "email_draft", "schema": _EMAIL_SCHEMA, "strict": True,
+                }}},
+            )
+            data = json.loads(response.content[0].text)
+            return EmailDraft(
+                customer_id=customer.id,
+                subject=data["subject"],
+                body=data["body"],
+                tone=tone,
+                generated_date=date.today(),
+            )
+        except Exception:
+            pass
+
+    # Fallback template
+    event_key = rel.event_type.value
+    subj, body_template = _EMAIL_FALLBACK.get(event_key, _EMAIL_FALLBACK["relocation"])
+    return EmailDraft(
+        customer_id=customer.id,
+        subject=subj,
+        body=body_template.format(first=first),
+        tone=tone,
+        generated_date=date.today(),
+    )
+
+
+# ── Public entry points ───────────────────────────────────────────────────────
 
 def generate_conversation_starter(customer: CustomerDetail, tone: str = "conversational") -> ConversationStarter:
     if _client is not None:

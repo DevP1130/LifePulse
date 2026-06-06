@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List
 
 from app.data_generator import get_all_customers, get_customer_by_id, update_customer_status
-from app.brief_generator import generate_conversation_starter
-from app.models import CustomerSummary, CustomerDetail, ConversationStarter, StatusUpdate, EventStatus
+from app.brief_generator import generate_conversation_starter, generate_signal_summary, generate_email_draft
+from app.models import CustomerSummary, CustomerDetail, ConversationStarter, EmailDraft, SignalSummary, StatusUpdate, EventStatus
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
 
@@ -39,6 +39,25 @@ def get_conversation_starter(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     return generate_conversation_starter(customer, tone=tone)
+
+
+@router.get("/{customer_id}/signal-summary", response_model=SignalSummary)
+def get_signal_summary(customer_id: str):
+    customer = get_customer_by_id(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return generate_signal_summary(customer)
+
+
+@router.get("/{customer_id}/email", response_model=EmailDraft)
+def get_email_draft(
+    customer_id: str,
+    tone: str = Query("conversational", pattern="^(formal|conversational|empathetic)$"),
+):
+    customer = get_customer_by_id(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return generate_email_draft(customer, tone=tone)
 
 
 @router.patch("/{customer_id}/status", response_model=CustomerSummary)
