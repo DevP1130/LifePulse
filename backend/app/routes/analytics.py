@@ -66,6 +66,22 @@ def get_analytics():
     avg_conf = sum(c.life_event.confidence for c in customers) / total if total else 0
     avg_risk = sum(c.life_event.churn_risk for c in customers) / total if total else 0
 
+    # Risk segmentation with annual value at risk
+    seg: dict[str, dict] = {
+        "high":   {"label": "High Risk",   "count": 0, "annual_value_at_risk": 0.0},
+        "medium": {"label": "Medium Risk", "count": 0, "annual_value_at_risk": 0.0},
+        "low":    {"label": "Low Risk",    "count": 0, "annual_value_at_risk": 0.0},
+    }
+    for c in customers:
+        tier = "high" if c.life_event.churn_risk >= 0.65 else "medium" if c.life_event.churn_risk >= 0.40 else "low"
+        seg[tier]["count"] += 1
+        seg[tier]["annual_value_at_risk"] += c.avg_monthly_spend * 12
+
+    risk_segments = {
+        k: {**v, "pct": v["count"] / total if total else 0}
+        for k, v in seg.items()
+    }
+
     return {
         "total_customers": total,
         "total_signals": total_signals,
@@ -75,4 +91,5 @@ def get_analytics():
         "event_breakdown": event_breakdown,
         "signals_by_week": signals_by_week,
         "confidence_distribution": conf_buckets,
+        "risk_segments": risk_segments,
     }

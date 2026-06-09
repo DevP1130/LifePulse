@@ -80,6 +80,11 @@ export interface AnalyticsData {
   }>
   signals_by_week: { week: string; count: number }[]
   confidence_distribution: { label: string; count: number }[]
+  risk_segments: {
+    high:   { label: string; count: number; pct: number; annual_value_at_risk: number }
+    medium: { label: string; count: number; pct: number; annual_value_at_risk: number }
+    low:    { label: string; count: number; pct: number; annual_value_at_risk: number }
+  }
 }
 
 export interface ActivityEntry {
@@ -89,6 +94,7 @@ export interface ActivityEntry {
   fromStatus: EventStatus
   toStatus: EventStatus
   timestamp: string
+  rmName: string
 }
 
 export interface ConversationStarter {

@@ -1,9 +1,39 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import type { CustomerSummary, EventStatus, LifeEventType, ActivityEntry } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
+
+// ── Live signal feed simulation ───────────────────────────────────────────────
+
+interface LiveSignal {
+  id: number
+  initials: string
+  icon: string
+  label: string
+  detail: string
+  ts: number
+  isNew?: boolean
+}
+
+const SIGNAL_POOL: Omit<LiveSignal, 'id' | 'ts' | 'isNew'>[] = [
+  { initials: 'JR', icon: '🚚', label: 'Moving Truck Rental',   detail: 'U-Haul · $890'           },
+  { initials: 'SM', icon: '🍼', label: 'Baby Registry',         detail: 'buybuy BABY · $234'       },
+  { initials: 'ET', icon: '💍', label: 'Engagement Ring',       detail: 'Tiffany & Co. · $4,200'   },
+  { initials: 'KL', icon: '🔍', label: 'Home Inspection Fee',   detail: 'Pillar To Post · $450'    },
+  { initials: 'AP', icon: '📦', label: 'Storage Unit',          detail: 'CubeSmart · $149/mo'      },
+  { initials: 'MN', icon: '🏥', label: 'Hospital Delivery',     detail: 'Johns Hopkins · $3,100'   },
+  { initials: 'BW', icon: '🏛️', label: 'Wedding Venue Deposit', detail: 'Grand Ballroom · $5,500'  },
+  { initials: 'CR', icon: '📬', label: 'Address Change',        detail: 'USPS Forward · $1.10'     },
+  { initials: 'TH', icon: '🏠', label: 'Down Payment / Escrow', detail: 'First American · $42,000' },
+  { initials: 'DV', icon: '✈️', label: 'Honeymoon Booking',    detail: 'Sandals Resorts · $6,800' },
+  { initials: 'PG', icon: '🧸', label: 'Baby Gear Purchase',    detail: 'Target Baby · $312'       },
+  { initials: 'LF', icon: '⚡', label: 'New Utility Setup',     detail: 'Xcel Energy · $95'        },
+  { initials: 'OC', icon: '🛋️', label: 'Furniture Purchase',   detail: 'IKEA · $1,840'            },
+  { initials: 'RB', icon: '📊', label: 'Property Appraisal',   detail: 'National Appraisers · $650'},
+  { initials: 'YK', icon: '🌅', label: 'IRA Rollover',         detail: 'Wealth Mgmt · $180,000'   },
+]
 
 type SortKey = 'confidence' | 'churn_risk' | 'days' | 'name'
 type SortDir = 'asc' | 'desc'
@@ -82,6 +112,10 @@ export default function Dashboard() {
   const [search, setSearch] = useState('')
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>(loadActivityLog)
   const [activityOpen, setActivityOpen] = useState(true)
+  const [liveFeed, setLiveFeed] = useState<LiveSignal[]>(() =>
+    SIGNAL_POOL.slice(0, 4).map((s, i) => ({ ...s, id: i, ts: Date.now() - i * 55_000 }))
+  )
+  const poolIdxRef = useRef(4)
 
   useEffect(() => {
     api.listCustomers()
@@ -90,10 +124,36 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
+  // Cycle live signal feed every 9 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const next = SIGNAL_POOL[poolIdxRef.current % SIGNAL_POOL.length]
+      poolIdxRef.current += 1
+      setLiveFeed(prev => [
+        { ...next, id: Date.now(), ts: Date.now(), isNew: true },
+        ...prev.slice(0, 3),
+      ])
+    }, 9000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Refresh activity log when returning from CustomerDetail
   useEffect(() => {
     setActivityLog(loadActivityLog())
   }, [customers])
+
+  function exportAuditLog() {
+    const lines = activityLog.map(e =>
+      `[${new Date(e.timestamp).toISOString()}] ${e.rmName ?? 'System'} · ${e.customerName} · ${e.fromStatus} → ${e.toStatus}`
+    )
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `lifepulse-audit-${Date.now()}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   useEffect(() => {
     localStorage.setItem('lp_outreach', JSON.stringify(outreach))
@@ -271,6 +331,38 @@ export default function Dashboard() {
               <span>0%</span>
               <span>50%</span>
               <span>100%</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Intelligence Feed */}
+      {!loading && !error && (
+        <div className="bg-white rounded-xl border border-gray-100 px-5 py-3.5 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+              </span>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Live</p>
+            </div>
+            <div className="h-4 w-px bg-gray-100 flex-shrink-0" />
+            <div className="flex items-center gap-2 overflow-x-auto flex-1 no-scrollbar">
+              {liveFeed.map((sig, idx) => (
+                <div
+                  key={sig.id}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-100 flex-shrink-0 transition-all ${
+                    idx === 0 && sig.isNew ? 'bg-accent/5 border-accent/20' : 'bg-gray-50'
+                  }`}
+                >
+                  <span className="text-sm leading-none">{sig.icon}</span>
+                  <div>
+                    <p className="text-[11px] font-medium text-gray-700 whitespace-nowrap">{sig.initials} · {sig.label}</p>
+                    <p className="text-[10px] text-gray-400 whitespace-nowrap">{sig.detail} · {relativeTime(new Date(sig.ts).toISOString())}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -519,63 +611,96 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Activity log */}
+      {/* Compliance Audit Log */}
       {!loading && !error && (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-          <button
-            onClick={() => setActivityOpen(o => !o)}
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/60 transition-colors"
-          >
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
             <div className="flex items-center gap-2.5">
-              <span className="text-sm font-semibold text-gray-900">Activity Log</span>
+              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+              </svg>
+              <span className="text-sm font-semibold text-gray-900">Compliance Audit Log</span>
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 border border-gray-200 text-gray-400 rounded-full">FCRA</span>
               {activityLog.length > 0 && (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-accent/10 text-accent rounded-full">
                   {activityLog.length}
                 </span>
               )}
             </div>
-            <svg
-              className={`w-4 h-4 text-gray-400 transition-transform ${activityOpen ? '' : '-rotate-90'}`}
-              fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"
-            >
-              <path d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
+            <div className="flex items-center gap-2">
+              {activityLog.length > 0 && (
+                <button
+                  onClick={exportAuditLog}
+                  className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                  </svg>
+                  Export
+                </button>
+              )}
+              <button
+                onClick={() => setActivityOpen(o => !o)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg
+                  className={`w-4 h-4 transition-transform ${activityOpen ? '' : '-rotate-90'}`}
+                  fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"
+                >
+                  <path d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+          </div>
 
           {activityOpen && (
-            <div className="border-t border-gray-50">
+            <div>
               {activityLog.length === 0 ? (
                 <p className="text-xs text-gray-400 px-6 py-5">
-                  No status changes recorded yet. Update a customer's status to see it tracked here.
+                  No status changes recorded. All RM actions on customer records will appear here.
                 </p>
               ) : (
-                <ul className="divide-y divide-gray-50">
-                  {activityLog.map(entry => (
-                    <li
-                      key={entry.id}
-                      className="flex items-center gap-3 px-6 py-3 hover:bg-gray-50/40 transition-colors cursor-pointer"
-                      onClick={() => navigate(`/customers/${entry.customerId}`)}
-                    >
-                      <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center text-[10px] font-bold text-accent flex-shrink-0">
-                        {initials(entry.customerName)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-xs font-semibold text-gray-800">{entry.customerName}</span>
-                        <span className="text-xs text-gray-400 mx-1.5">moved</span>
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_COLOR[entry.fromStatus]}`}>
-                          {entry.fromStatus}
+                <>
+                  <ul className="divide-y divide-gray-50">
+                    {activityLog.map(entry => (
+                      <li
+                        key={entry.id}
+                        className="flex items-center gap-3 px-6 py-2.5 hover:bg-gray-50/40 transition-colors cursor-pointer"
+                        onClick={() => navigate(`/customers/${entry.customerId}`)}
+                      >
+                        <span className="text-[10px] font-mono text-gray-300 flex-shrink-0 w-32 tabular-nums">
+                          {new Date(entry.timestamp).toISOString().slice(0, 19).replace('T', ' ')}
                         </span>
-                        <svg className="inline w-3 h-3 text-gray-300 mx-1" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path d="M5 12h14M12 5l7 7-7 7" />
-                        </svg>
-                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_COLOR[entry.toStatus]}`}>
-                          {entry.toStatus}
+                        <div className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center text-[9px] font-bold text-accent flex-shrink-0">
+                          {initials(entry.customerName)}
+                        </div>
+                        <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                          <span className="text-xs font-semibold text-gray-800">{entry.customerName}</span>
+                          <span className="text-[10px] text-gray-400">·</span>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_COLOR[entry.fromStatus]}`}>
+                            {entry.fromStatus}
+                          </span>
+                          <svg className="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path d="M5 12h14M12 5l7 7-7 7" />
+                          </svg>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_COLOR[entry.toStatus]}`}>
+                            {entry.toStatus}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">
+                          {entry.rmName ?? 'System'}
                         </span>
-                      </div>
-                      <span className="text-[11px] text-gray-400 flex-shrink-0">{relativeTime(entry.timestamp)}</span>
-                    </li>
-                  ))}
-                </ul>
+                        <span className="text-[11px] text-gray-300 flex-shrink-0 w-14 text-right">
+                          {relativeTime(entry.timestamp)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-gray-300 px-6 py-2.5 border-t border-gray-50">
+                    Records are append-only and cannot be modified. Retained per FCRA §605 requirements.
+                  </p>
+                </>
               )}
             </div>
           )}

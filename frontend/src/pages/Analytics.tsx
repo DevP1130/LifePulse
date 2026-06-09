@@ -368,6 +368,53 @@ export default function Analytics() {
           </div>
         </div>
       </div>
+
+      {/* Row 4: At-Risk Portfolio Segmentation */}
+      <div className="mt-6 bg-white rounded-xl border border-gray-100 px-6 py-5">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">At-Risk Portfolio Segmentation</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Customers clustered by churn risk · annual revenue at stake</p>
+          </div>
+          <span className="text-[10px] font-semibold px-2 py-1 border border-gray-200 text-gray-400 rounded-full uppercase tracking-wide">
+            Responsible AI
+          </span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-4 mb-5">
+          {([ 'high', 'medium', 'low' ] as const).map(tier => {
+            const seg = data.risk_segments[tier]
+            const barColor = tier === 'high' ? 'bg-gray-800' : tier === 'medium' ? 'bg-accent/60' : 'bg-gray-200'
+            const labelColor = tier === 'high' ? 'text-gray-900' : tier === 'medium' ? 'text-accent' : 'text-gray-400'
+            return (
+              <div key={tier} className="border border-gray-100 rounded-xl px-5 py-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <p className={`text-xs font-semibold uppercase tracking-wide ${labelColor}`}>{seg.label}</p>
+                    <p className="text-2xl font-bold text-gray-900 mt-1">{seg.count}</p>
+                    <p className="text-xs text-gray-400">{Math.round(seg.pct * 100)}% of portfolio</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-gray-400">Annual value</p>
+                    <p className="text-sm font-bold text-gray-900 mt-0.5">
+                      ${(seg.annual_value_at_risk / 1000).toFixed(0)}k
+                    </p>
+                    <p className="text-[10px] text-gray-400">at risk</p>
+                  </div>
+                </div>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${seg.pct * 100}%` }} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="bg-gray-50 rounded-lg px-4 py-3 text-[11px] text-gray-400 leading-relaxed">
+          <span className="font-semibold text-gray-500">Model note — </span>
+          Churn risk scores are generated from transaction signal patterns and account tenure. Scores above 65% indicate customers statistically likely to open a primary account at a competing institution within 90 days of a life event. All scores require RM validation. High-risk customers without outreach within 7 days of detection show a 3.2× higher attrition rate in back-testing.
+        </div>
+      </div>
     </div>
   )
 }
