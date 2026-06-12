@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import type { CustomerDetail as CustomerDetailType, ConversationStarter, EmailDraft, EventStatus, LifeEventType, ActivityEntry, SignalSummary } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
@@ -83,6 +84,7 @@ export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { showToast } = useToast()
 
   const [customer, setCustomer] = useState<CustomerDetailType | null>(null)
   const [starter, setStarter] = useState<ConversationStarter | null>(null)
@@ -98,6 +100,17 @@ export default function CustomerDetail() {
   const [error, setError] = useState<string | null>(null)
   const [tone, setTone] = useState<'formal' | 'conversational' | 'empathetic'>('conversational')
 
+  const [notes, setNotes] = useState('')
+  const [followUpDate, setFollowUpDate] = useState('')
+  const notesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Load notes + follow-up date from localStorage
+  useEffect(() => {
+    if (!id) return
+    setNotes(localStorage.getItem(`lp_notes_${id}`) ?? '')
+    setFollowUpDate(localStorage.getItem(`lp_followup_${id}`) ?? '')
+  }, [id])
+
   useEffect(() => {
     if (!id) return
     Promise.all([
@@ -111,6 +124,43 @@ export default function CustomerDetail() {
         setLoadingStarter(false)
       })
   }, [id])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+      if (e.key === 'Escape') navigate('/customers')
+      if (e.key === '1') setTone('formal')
+      if (e.key === '2') setTone('conversational')
+      if (e.key === '3') setTone('empathetic')
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigate])
+
+  const handleNotesChange = (val: string) => {
+    setNotes(val)
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current)
+    notesTimerRef.current = setTimeout(() => {
+      if (id) {
+        localStorage.setItem(`lp_notes_${id}`, val)
+        showToast('Notes saved', 'info')
+      }
+    }, 800)
+  }
+
+  const handleFollowUpChange = (val: string) => {
+    setFollowUpDate(val)
+    if (id) {
+      if (val) {
+        localStorage.setItem(`lp_followup_${id}`, val)
+        showToast('Follow-up date set', 'info')
+      } else {
+        localStorage.removeItem(`lp_followup_${id}`)
+      }
+    }
+  }
 
   const handleToneChange = async (newTone: 'formal' | 'conversational' | 'empathetic') => {
     if (!id || newTone === tone) return
@@ -144,6 +194,7 @@ export default function CustomerDetail() {
     if (!emailDraft) return
     await navigator.clipboard.writeText(`Subject: ${emailDraft.subject}\n\n${emailDraft.body}`)
     setCopied(true)
+    showToast('Email copied to clipboard')
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -155,6 +206,7 @@ export default function CustomerDetail() {
       const updated = await api.updateStatus(id, newStatus)
       setCustomer(prev => prev ? { ...prev, life_event: { ...prev.life_event, status: updated.life_event.status } } : prev)
       appendActivity({ customerId: id, customerName: customer.name, fromStatus: prevStatus, toStatus: newStatus, rmName: user?.name ?? 'System' })
+      showToast(`Status updated to ${newStatus}`)
       if (starter) {
         const refreshed = await api.getStarter(id)
         setStarter(refreshed)
@@ -196,20 +248,48 @@ export default function CustomerDetail() {
   const primaryAction = transitions[0]
   const evConfig = EVENT_TYPE_CONFIG[ev.event_type]
 
+  const followUpDays = followUpDate
+    ? Math.ceil((new Date(followUpDate).getTime() - Date.now()) / 86400000)
+    : null
+
   return (
     <div className="px-8 py-8 max-w-6xl">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-6">
-        <button
-          onClick={() => navigate('/customers')}
-          className="hover:text-accent transition-colors"
-        >
-          Customers
-        </button>
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-          <path d="M9 18l6-6-6-6" />
-        </svg>
-        <span className="text-gray-700 font-medium">{customer.name}</span>
+      <div className="flex items-center justify-between mb-6 no-print">
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <button
+            onClick={() => navigate('/customers')}
+            className="hover:text-accent transition-colors"
+          >
+            Customers
+          </button>
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+          <span className="text-gray-700 font-medium">{customer.name}</span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Keyboard hint */}
+          <span className="hidden lg:flex items-center gap-1.5 text-[10px] text-gray-300">
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 font-mono">Esc</kbd> back
+            <span className="mx-1">·</span>
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 font-mono">1</kbd>
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 font-mono">2</kbd>
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded text-gray-400 font-mono">3</kbd> tone
+          </span>
+
+          {/* Print button */}
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
+            </svg>
+            Print Brief
+          </button>
+        </div>
       </div>
 
       {/* Customer header */}
@@ -272,7 +352,7 @@ export default function CustomerDetail() {
           </div>
 
           {/* Actions */}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 no-print">
             <button
               onClick={() => handleStatusChange(primaryAction)}
               disabled={updatingStatus}
@@ -288,6 +368,35 @@ export default function CustomerDetail() {
               >
                 {STATUS_ACTION_LABEL[transitions[1]]}
               </button>
+            )}
+
+            {/* Follow-up date */}
+            <div className="flex items-center gap-1.5 mt-1">
+              <svg className="w-3 h-3 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <input
+                type="date"
+                value={followUpDate}
+                onChange={e => handleFollowUpChange(e.target.value)}
+                className="text-[11px] text-gray-500 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-accent/20 rounded cursor-pointer"
+                title="Follow-up date"
+              />
+            </div>
+            {followUpDays !== null && (
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full text-center ${
+                followUpDays < 0 ? 'bg-red-50 text-red-400' :
+                followUpDays === 0 ? 'bg-amber-50 text-amber-500' :
+                followUpDays <= 3 ? 'bg-amber-50 text-amber-500' :
+                'bg-accent/10 text-accent'
+              }`}>
+                {followUpDays < 0 ? `${Math.abs(followUpDays)}d overdue` :
+                 followUpDays === 0 ? 'Follow-up today' :
+                 `Follow-up in ${followUpDays}d`}
+              </span>
             )}
           </div>
         </div>
@@ -359,12 +468,19 @@ export default function CustomerDetail() {
           </div>
         </div>
 
-        <div className="col-span-2 flex flex-col gap-3">
+        <div className="col-span-2 flex flex-col gap-3 no-print">
           {/* Tone selector */}
           <div className="bg-white rounded-xl border border-gray-100 px-4 py-3.5">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Brief Tone</p>
+            <div className="flex items-center justify-between mb-2.5">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Brief Tone</p>
+              <span className="text-[10px] text-gray-300">
+                <kbd className="px-1 py-0.5 bg-gray-100 rounded font-mono text-gray-400">1</kbd>
+                <kbd className="px-1 py-0.5 bg-gray-100 rounded font-mono text-gray-400 ml-0.5">2</kbd>
+                <kbd className="px-1 py-0.5 bg-gray-100 rounded font-mono text-gray-400 ml-0.5">3</kbd>
+              </span>
+            </div>
             <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-              {(['formal', 'conversational', 'empathetic'] as const).map(t => (
+              {(['formal', 'conversational', 'empathetic'] as const).map((t, i) => (
                 <button
                   key={t}
                   onClick={() => handleToneChange(t)}
@@ -374,7 +490,7 @@ export default function CustomerDetail() {
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  {t}
+                  {i + 1}. {t}
                 </button>
               ))}
             </div>
@@ -463,6 +579,26 @@ export default function CustomerDetail() {
           </div>
         </div>
         <TransactionTable transactions={customer.transactions} limit={50} />
+      </div>
+
+      {/* RM Notes */}
+      <div className="bg-white rounded-xl border border-gray-100 px-6 py-5 mt-6 no-print">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-900">RM Notes</h2>
+            {notes.trim() && (
+              <span className="w-1.5 h-1.5 rounded-full bg-accent/60" />
+            )}
+          </div>
+          <span className="text-[10px] text-gray-300">auto-saved · private</span>
+        </div>
+        <textarea
+          value={notes}
+          onChange={e => handleNotesChange(e.target.value)}
+          placeholder="Add private notes about this customer… not visible to the customer or in exports."
+          className="w-full text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2.5 resize-none focus:outline-none focus:ring-1 focus:ring-accent/30 border border-gray-100 placeholder-gray-400 leading-relaxed"
+          rows={4}
+        />
       </div>
     </div>
   )

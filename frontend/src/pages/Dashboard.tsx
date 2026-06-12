@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
+import { useToast } from '../context/ToastContext'
 import type { CustomerSummary, EventStatus, LifeEventType, ActivityEntry } from '../types'
 import StatusBadge from '../components/StatusBadge'
 import MiniBar from '../components/MiniBar'
@@ -33,6 +34,36 @@ const SIGNAL_POOL: Omit<LiveSignal, 'id' | 'ts' | 'isNew'>[] = [
   { initials: 'OC', icon: '🛋️', label: 'Furniture Purchase',   detail: 'IKEA · $1,840'            },
   { initials: 'RB', icon: '📊', label: 'Property Appraisal',   detail: 'National Appraisers · $650'},
   { initials: 'YK', icon: '🌅', label: 'IRA Rollover',         detail: 'Wealth Mgmt · $180,000'   },
+]
+
+// ── Demo tour steps ───────────────────────────────────────────────────────────
+
+const DEMO_STEPS = [
+  {
+    icon: '👋',
+    title: 'Welcome to LifePulse',
+    desc: 'LifePulse monitors Capital One customer transactions in real time, detecting life events before customers reach out — giving relationship managers a first-mover advantage.',
+  },
+  {
+    icon: '⚡',
+    title: 'Live Signal Feed',
+    desc: 'The live ticker at the top simulates transactions being flagged in real time — moving trucks, wedding venues, hospital visits, home inspections. Each one is a potential conversation.',
+  },
+  {
+    icon: '📊',
+    title: 'Outreach Pipeline',
+    desc: 'Use the Outreach column to track where each customer is in your pipeline. Customers move from Not Contacted → Contacted → Converted. All changes are logged in the audit log below.',
+  },
+  {
+    icon: '🤖',
+    title: 'Customer Brief',
+    desc: 'Click any row to open a full AI-generated brief with signal timeline, conversation starters, and a draft outreach email — tailored to the customer\'s specific life event and your preferred tone.',
+  },
+  {
+    icon: '🔒',
+    title: 'Compliance Audit Log',
+    desc: 'Every status change is recorded in the append-only log at the bottom — FCRA-compliant, exportable, and timestamped. All RM actions are attributed and immutable.',
+  },
 ]
 
 type SortKey = 'confidence' | 'churn_risk' | 'days' | 'name'
@@ -102,6 +133,9 @@ function relativeTime(isoStr: string): string {
 
 export default function Dashboard() {
   const navigate = useNavigate()
+  const { showToast } = useToast()
+  const searchRef = useRef<HTMLInputElement>(null)
+
   const [customers, setCustomers] = useState<CustomerSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -115,6 +149,9 @@ export default function Dashboard() {
   const [liveFeed, setLiveFeed] = useState<LiveSignal[]>(() =>
     SIGNAL_POOL.slice(0, 4).map((s, i) => ({ ...s, id: i, ts: Date.now() - i * 55_000 }))
   )
+  const [selectedIdx, setSelectedIdx] = useState(-1)
+  const [demoOpen, setDemoOpen] = useState(false)
+  const [demoStep, setDemoStep] = useState(0)
   const poolIdxRef = useRef(4)
 
   useEffect(() => {
@@ -142,28 +179,9 @@ export default function Dashboard() {
     setActivityLog(loadActivityLog())
   }, [customers])
 
-  function exportAuditLog() {
-    const lines = activityLog.map(e =>
-      `[${new Date(e.timestamp).toISOString()}] ${e.rmName ?? 'System'} · ${e.customerName} · ${e.fromStatus} → ${e.toStatus}`
-    )
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `lifepulse-audit-${Date.now()}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
   useEffect(() => {
     localStorage.setItem('lp_outreach', JSON.stringify(outreach))
   }, [outreach])
-
-  const updateOutreach = (id: string, status: OutreachStatus) =>
-    setOutreach(prev => ({ ...prev, [id]: status }))
-
-  const getOutreach = (id: string): OutreachStatus =>
-    outreach[id] ?? 'not_contacted'
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -186,6 +204,26 @@ export default function Dashboard() {
       }
     })
   }, [customers, filter, sort, confThreshold, search])
+
+  // Note indicators — check localStorage once per customers load
+  const hasNotes = useMemo(() => {
+    const map: Record<string, boolean> = {}
+    for (const c of customers) {
+      const n = localStorage.getItem(`lp_notes_${c.id}`)
+      if (n?.trim()) map[c.id] = true
+    }
+    return map
+  }, [customers])
+
+  // Follow-up dates
+  const followUps = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const c of customers) {
+      const v = localStorage.getItem(`lp_followup_${c.id}`)
+      if (v) map[c.id] = v
+    }
+    return map
+  }, [customers])
 
   const stats = useMemo(() => {
     const needAction = customers.filter(c => ['new', 'active'].includes(c.life_event.status))
@@ -214,6 +252,71 @@ export default function Dashboard() {
       .map(t => ({ type: t, count: counts.get(t)!, pct: (counts.get(t)! / max) * 100 }))
   }, [customers])
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName.toLowerCase()
+      const isInput = tag === 'input' || tag === 'textarea' || tag === 'select'
+      if (isInput) {
+        if (e.key === 'Escape') {
+          setSearch('')
+          ;(e.target as HTMLElement).blur()
+        }
+        return
+      }
+      switch (e.key) {
+        case 'j':
+          setSelectedIdx(i => Math.min(i + 1, filtered.length - 1))
+          break
+        case 'k':
+          setSelectedIdx(i => Math.max(i - 1, 0))
+          break
+        case 'Enter':
+          if (selectedIdx >= 0 && filtered[selectedIdx]) {
+            navigate(`/customers/${filtered[selectedIdx].id}`)
+          }
+          break
+        case '/':
+          e.preventDefault()
+          searchRef.current?.focus()
+          break
+        case 'Escape':
+          setSearch('')
+          setSelectedIdx(-1)
+          setDemoOpen(false)
+          break
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [filtered, selectedIdx, navigate])
+
+  function exportAuditLog() {
+    const lines = activityLog.map(e =>
+      `[${new Date(e.timestamp).toISOString()}] ${e.rmName ?? 'System'} · ${e.customerName} · ${e.fromStatus} → ${e.toStatus}`
+    )
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `lifepulse-audit-${Date.now()}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const updateOutreach = (id: string, status: OutreachStatus) => {
+    setOutreach(prev => ({ ...prev, [id]: status }))
+    const labels: Record<OutreachStatus, string> = {
+      not_contacted: 'Marked not contacted',
+      contacted: 'Outreach logged',
+      converted: 'Marked converted',
+    }
+    showToast(labels[status])
+  }
+
+  const getOutreach = (id: string): OutreachStatus =>
+    outreach[id] ?? 'not_contacted'
+
   const toggleSort = (key: SortKey) =>
     setSort(prev => prev.key === key
       ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
@@ -227,12 +330,92 @@ export default function Dashboard() {
 
   return (
     <div className="px-8 py-8">
+      {/* Demo tour modal */}
+      {demoOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setDemoOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md px-8 py-8" onClick={e => e.stopPropagation()}>
+            {/* Progress dots */}
+            <div className="flex items-center justify-between mb-7">
+              <div className="flex items-center gap-1.5">
+                {DEMO_STEPS.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setDemoStep(i)}
+                    className={`h-1.5 rounded-full transition-all ${
+                      i === demoStep ? 'w-6 bg-accent' :
+                      i < demoStep ? 'w-3 bg-accent/30' : 'w-3 bg-gray-200'
+                    }`}
+                  />
+                ))}
+              </div>
+              <button onClick={() => setDemoOpen(false)} className="text-gray-300 hover:text-gray-500 transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Step content */}
+            <span className="text-5xl block mb-5">{DEMO_STEPS[demoStep].icon}</span>
+            <h2 className="text-xl font-bold text-gray-900 mb-3">{DEMO_STEPS[demoStep].title}</h2>
+            <p className="text-sm text-gray-500 leading-relaxed mb-8">{DEMO_STEPS[demoStep].desc}</p>
+
+            {/* Navigation */}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setDemoStep(s => s - 1)}
+                disabled={demoStep === 0}
+                className="text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-xs text-gray-300">{demoStep + 1} of {DEMO_STEPS.length}</span>
+              {demoStep < DEMO_STEPS.length - 1 ? (
+                <button
+                  onClick={() => setDemoStep(s => s + 1)}
+                  className="px-5 py-2 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-xl transition-colors"
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  onClick={() => setDemoOpen(false)}
+                  className="px-5 py-2 bg-gray-900 hover:bg-gray-700 text-white text-sm font-semibold rounded-xl transition-colors"
+                >
+                  Got it
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Life Event Intelligence</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Customers with detected life event signals — sorted by priority
-        </p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Life Event Intelligence</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Customers with detected life event signals — sorted by priority
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="hidden lg:flex items-center gap-1.5 text-[10px] text-gray-300 mr-1">
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded font-mono text-gray-400">j</kbd>
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded font-mono text-gray-400">k</kbd> navigate ·
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded font-mono text-gray-400">/</kbd> search ·
+            <kbd className="px-1 py-0.5 bg-gray-100 rounded font-mono text-gray-400">↵</kbd> open
+          </span>
+          <button
+            onClick={() => { setDemoStep(0); setDemoOpen(true) }}
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+            Demo Tour
+          </button>
+        </div>
       </div>
 
       {/* Stats strip */}
@@ -399,11 +582,12 @@ export default function Dashboard() {
                 <path d="M21 21l-4.35-4.35" />
               </svg>
               <input
+                ref={searchRef}
                 type="text"
-                placeholder="Search name or account…"
+                placeholder="Search name or account… (/)"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent/40 w-52 transition-colors"
+                className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-accent/30 focus:border-accent/40 w-56 transition-colors"
               />
               {search && (
                 <button
@@ -504,22 +688,34 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {filtered.map(c => {
+              {filtered.map((c, idx) => {
                 const ev = c.life_event
                 const ini = initials(c.name)
                 const evConfig = EVENT_TYPE_CONFIG[ev.event_type]
                 const os = getOutreach(c.id)
+                const followUpDate = followUps[c.id]
+                const followUpDays = followUpDate
+                  ? Math.ceil((new Date(followUpDate).getTime() - Date.now()) / 86400000)
+                  : null
+                const isSelected = idx === selectedIdx
                 return (
                   <tr
                     key={c.id}
-                    className="hover:bg-gray-50/60 transition-colors cursor-pointer group"
+                    className={`hover:bg-gray-50/60 transition-colors cursor-pointer group ${
+                      isSelected ? 'bg-accent/5 ring-1 ring-inset ring-accent/20' : ''
+                    }`}
                     onClick={() => navigate(`/customers/${c.id}`)}
                   >
                     {/* Customer */}
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center text-xs font-bold text-accent flex-shrink-0">
-                          {ini}
+                        <div className="relative flex-shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center text-xs font-bold text-accent">
+                            {ini}
+                          </div>
+                          {hasNotes[c.id] && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-accent border-2 border-white" title="Has notes" />
+                          )}
                         </div>
                         <div>
                           <p className="font-medium text-gray-900">{c.name}</p>
@@ -570,15 +766,29 @@ export default function Dashboard() {
                       </select>
                     </td>
 
-                    {/* Days */}
+                    {/* Days + follow-up */}
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-gray-500 tabular-nums">
-                          {ev.days_since_first_signal}d ago
-                        </span>
-                        {ev.days_since_first_signal <= 7 && ev.status !== 'resolved' && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-gray-900 text-white rounded-full leading-none">
-                            Urgent
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-gray-500 tabular-nums">
+                            {ev.days_since_first_signal}d ago
+                          </span>
+                          {ev.days_since_first_signal <= 7 && ev.status !== 'resolved' && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-gray-900 text-white rounded-full leading-none">
+                              Urgent
+                            </span>
+                          )}
+                        </div>
+                        {followUpDays !== null && (
+                          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full leading-none self-start ${
+                            followUpDays < 0 ? 'bg-red-50 text-red-400' :
+                            followUpDays === 0 ? 'bg-amber-50 text-amber-500' :
+                            followUpDays <= 3 ? 'bg-amber-50 text-amber-500' :
+                            'bg-accent/10 text-accent'
+                          }`}>
+                            {followUpDays < 0 ? `${Math.abs(followUpDays)}d overdue` :
+                             followUpDays === 0 ? 'Follow-up today' :
+                             `Follow-up ${followUpDays}d`}
                           </span>
                         )}
                       </div>

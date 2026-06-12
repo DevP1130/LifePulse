@@ -21,3 +21,19 @@
     @apply bg-gray-200 rounded-full;
   }
 }
+
+@keyframes slideInRight {
+  from { transform: translateX(calc(100% + 24px)); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+.toast-slide-in {
+  animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  main { margin-left: 0 !important; }
+  body { background: white !important; }
+  .bg-\[#F7F8FA\] { background: white !important; }
+  .shadow-sm, .shadow-lg { box-shadow: none !important; }
+}
