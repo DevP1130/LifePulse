@@ -46,6 +46,94 @@ const EVENT_TYPE_CONFIG: Record<LifeEventType, { label: string; icon: string }> 
   retirement:    { label: 'Retirement',    icon: '🌅' },
 }
 
+interface ProductRec {
+  icon: string
+  product: string
+  category: string
+  why: string
+}
+
+const PRODUCT_FIT: Record<LifeEventType, ProductRec[]> = {
+  relocation: [
+    { icon: '🏦', product: '360 Checking',     category: 'Banking',   why: 'Opening a local account before the move makes utility and rent payments seamless from day one.' },
+    { icon: '🚗', product: 'Auto Loan',         category: 'Lending',   why: 'Relocation frequently triggers a vehicle upgrade — competitive rates and quick approval.' },
+    { icon: '🏠', product: 'Home Loan',         category: 'Mortgage',  why: 'If purchasing at the destination, locking a rate now protects against market movement.' },
+  ],
+  new_baby: [
+    { icon: '💰', product: '360 Savings',       category: 'Banking',   why: 'Dedicated savings account for college or emergency fund — automate transfers from day one.' },
+    { icon: '📈', product: 'UTMA Account',      category: 'Investing', why: 'Custodial investing account for long-term wealth transfer to the child at age 18–21.' },
+    { icon: '🛡️', product: 'Life Insurance',    category: 'Protection', why: 'New dependents make coverage a priority — referral to Capital One\'s insurance partners.' },
+  ],
+  marriage: [
+    { icon: '🏦', product: 'Joint Checking',    category: 'Banking',   why: 'Consolidating household finances simplifies bill pay and builds combined credit history.' },
+    { icon: '💳', product: 'Venture X Card',    category: 'Credit',    why: 'Honeymoon and household spending earn travel rewards with no foreign transaction fees.' },
+    { icon: '💰', product: '360 Savings',       category: 'Banking',   why: 'Joint savings goal account for a home down payment or shared emergency fund.' },
+  ],
+  home_purchase: [
+    { icon: '🏠', product: 'Home Loan',         category: 'Mortgage',  why: 'Capital One offers competitive rates — pre-approval before the offer strengthens negotiating position.' },
+    { icon: '🔑', product: 'HELOC',             category: 'Lending',   why: 'Post-closing, a home equity line provides flexible access to funds for renovations.' },
+    { icon: '🏦', product: '360 Checking',      category: 'Banking',   why: 'Auto-pay from a Capital One account may qualify for a rate discount on the mortgage.' },
+  ],
+  job_change: [
+    { icon: '💰', product: '360 Savings',       category: 'Banking',   why: 'Higher income from a new role is an opportunity to automate savings toward financial goals.' },
+    { icon: '📊', product: 'IRA Rollover',      category: 'Investing', why: '401(k) from the prior employer — Capital One can manage the rollover transition.' },
+    { icon: '💳', product: 'Savor Card',        category: 'Credit',    why: 'Dining and entertainment rewards align with the lifestyle shifts common in job transitions.' },
+  ],
+  retirement: [
+    { icon: '📊', product: 'IRA / Roth IRA',    category: 'Investing', why: 'Roll over employer funds and maximize contributions before income changes.' },
+    { icon: '🏦', product: 'High-Yield Savings', category: 'Banking',  why: 'Capital preservation with competitive rates — ideal for a fixed-income transition.' },
+    { icon: '👤', product: 'Wealth Management', category: 'Advisory',  why: 'Personalized withdrawal strategy and portfolio management with a dedicated advisor.' },
+  ],
+}
+
+const CATEGORY_COLOR: Record<string, string> = {
+  Banking:    'bg-blue-50 text-blue-500',
+  Lending:    'bg-purple-50 text-purple-500',
+  Mortgage:   'bg-orange-50 text-orange-500',
+  Investing:  'bg-green-50 text-green-600',
+  Credit:     'bg-accent/10 text-accent',
+  Protection: 'bg-red-50 text-red-400',
+  Advisory:   'bg-gray-100 text-gray-600',
+}
+
+function ProductFitCard({ rec, rank }: { rec: ProductRec; rank: number }) {
+  const [added, setAdded] = useState(false)
+
+  return (
+    <div className={`relative flex flex-col gap-2.5 rounded-xl border px-4 py-4 transition-all ${
+      rank === 0 ? 'border-accent/20 bg-accent/[0.03]' : 'border-gray-100 bg-gray-50/40'
+    }`}>
+      {rank === 0 && (
+        <span className="absolute top-3 right-3 text-[9px] font-bold uppercase tracking-wide text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">
+          Best fit
+        </span>
+      )}
+      <div className="flex items-start gap-2.5">
+        <span className="text-xl leading-none mt-0.5">{rec.icon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+            <p className="text-sm font-semibold text-gray-900">{rec.product}</p>
+          </div>
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${CATEGORY_COLOR[rec.category] ?? 'bg-gray-100 text-gray-500'}`}>
+            {rec.category}
+          </span>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-500 leading-snug">{rec.why}</p>
+      <button
+        onClick={() => setAdded(a => !a)}
+        className={`mt-auto text-[11px] font-semibold py-1.5 rounded-lg border transition-colors ${
+          added
+            ? 'bg-gray-900 text-white border-gray-900'
+            : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700'
+        }`}
+      >
+        {added ? '✓ Added to brief' : 'Add to brief'}
+      </button>
+    </div>
+  )
+}
+
 function computeAIFactors(customer: CustomerDetailType) {
   const signals = customer.life_event.signals
   const sorted = [...signals].sort((a, b) => new Date(a.detected_date).getTime() - new Date(b.detected_date).getTime())
@@ -451,6 +539,24 @@ export default function CustomerDetail() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Product Fit Recommendations */}
+      <div className="bg-white rounded-xl border border-gray-100 px-6 py-5 mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Product Fit</p>
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full">
+            {evConfig.icon} {evConfig.label}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {PRODUCT_FIT[ev.event_type].map((rec, i) => (
+            <ProductFitCard key={rec.product} rec={rec} rank={i} />
+          ))}
+        </div>
+        <p className="text-[10px] text-gray-400 mt-3 pt-3 border-t border-gray-50">
+          Recommendations are based on the detected life event and Capital One's product portfolio. Confirm suitability with the customer before presenting.
+        </p>
       </div>
 
       {/* Signal feed + conversation starter — two columns */}
