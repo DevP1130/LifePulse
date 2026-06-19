@@ -100,8 +100,104 @@ const STATUS_COLOR: Record<EventStatus, string> = {
   resolved:  'text-gray-400 bg-gray-50',
 }
 
+const BOARD_COLUMNS: { key: OutreachStatus; label: string; headerDot: string; dropRing: string }[] = [
+  { key: 'not_contacted', label: 'Not Contacted', headerDot: 'bg-gray-300',   dropRing: 'ring-gray-300'   },
+  { key: 'contacted',     label: 'Contacted',     headerDot: 'bg-accent/60',  dropRing: 'ring-accent/40'  },
+  { key: 'converted',     label: 'Converted',     headerDot: 'bg-gray-700',   dropRing: 'ring-gray-400'   },
+]
+
 function initials(name: string) {
   return name.split(' ').map(n => n[0]).join('').slice(0, 2)
+}
+
+function BoardCard({
+  c,
+  hasNote,
+  followUpDate,
+  onDragStart,
+  onClick,
+}: {
+  c: CustomerSummary
+  hasNote: boolean
+  followUpDate: string | undefined
+  onDragStart: () => void
+  onClick: () => void
+}) {
+  const ev = c.life_event
+  const evConfig = EVENT_TYPE_CONFIG[ev.event_type]
+  const ini = initials(c.name)
+  const followUpDays = followUpDate
+    ? Math.ceil((new Date(followUpDate).getTime() - Date.now()) / 86400000)
+    : null
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onClick={onClick}
+      className="bg-white rounded-xl border border-gray-100 p-3.5 cursor-pointer hover:shadow-sm hover:border-gray-200 transition-all group active:opacity-60 select-none"
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="relative flex-shrink-0">
+          <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center text-[10px] font-bold text-accent">
+            {ini}
+          </div>
+          {hasNote && (
+            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-accent border border-white" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-gray-900 truncate">{c.name}</p>
+          <p className="text-[10px] text-gray-400 truncate">{c.account_number}</p>
+        </div>
+        <svg className="w-3 h-3 text-gray-200 group-hover:text-accent transition-colors flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+      </div>
+
+      {/* Event badge */}
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 mb-3">
+        {evConfig.icon} {evConfig.label}
+      </span>
+
+      {/* Metrics */}
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <p className="text-[9px] text-gray-400 mb-1">Confidence</p>
+          <MiniBar value={ev.confidence} variant="confidence" />
+        </div>
+        <div>
+          <p className="text-[9px] text-gray-400 mb-1">Churn Risk</p>
+          <MiniBar value={ev.churn_risk} variant="risk" />
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-gray-400">{ev.days_since_first_signal}d ago</span>
+        <div className="flex items-center gap-1">
+          {ev.days_since_first_signal <= 7 && ev.status !== 'resolved' && (
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 bg-gray-900 text-white rounded-full leading-none">
+              Urgent
+            </span>
+          )}
+          {followUpDays !== null && (
+            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full leading-none ${
+              followUpDays < 0 ? 'bg-red-50 text-red-400' :
+              followUpDays === 0 ? 'bg-amber-50 text-amber-500' :
+              followUpDays <= 3 ? 'bg-amber-50 text-amber-500' :
+              'bg-accent/10 text-accent'
+            }`}>
+              {followUpDays < 0 ? `${Math.abs(followUpDays)}d late` :
+               followUpDays === 0 ? 'Today' :
+               `${followUpDays}d`}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function loadOutreach(): Record<string, OutreachStatus> {
@@ -152,6 +248,9 @@ export default function Dashboard() {
   const [selectedIdx, setSelectedIdx] = useState(-1)
   const [demoOpen, setDemoOpen] = useState(false)
   const [demoStep, setDemoStep] = useState(0)
+  const [viewMode, setViewMode] = useState<'table' | 'board'>('table')
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverCol, setDragOverCol] = useState<OutreachStatus | null>(null)
   const poolIdxRef = useRef(4)
 
   useEffect(() => {
@@ -603,31 +702,60 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-3">
+            {viewMode === 'table' && (
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => setSort({ key: 'days', dir: 'asc' })}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    sort.key === 'days' && sort.dir === 'asc'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Most Recent
+                </button>
+                <button
+                  onClick={() => setSort({ key: 'confidence', dir: 'desc' })}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    sort.key === 'confidence' && sort.dir === 'desc'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Highest Confidence
+                </button>
+              </div>
+            )}
+            <span className="text-xs text-gray-400 whitespace-nowrap">
+              {filtered.length} of {customers.length}
+            </span>
+
+            {/* View toggle */}
             <div className="flex items-center bg-gray-100 rounded-lg p-0.5 gap-0.5">
               <button
-                onClick={() => setSort({ key: 'days', dir: 'asc' })}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                  sort.key === 'days' && sort.dir === 'asc'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                onClick={() => setViewMode('table')}
+                title="Table view"
+                className={`p-1.5 rounded-md transition-colors ${
+                  viewMode === 'table' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
-                Most Recent
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path d="M3 10h18M3 14h18M10 4v16M3 6a1 1 0 011-1h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6z" />
+                </svg>
               </button>
               <button
-                onClick={() => setSort({ key: 'confidence', dir: 'desc' })}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
-                  sort.key === 'confidence' && sort.dir === 'desc'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                onClick={() => setViewMode('board')}
+                title="Board view"
+                className={`p-1.5 rounded-md transition-colors ${
+                  viewMode === 'board' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600'
                 }`}
               >
-                Highest Confidence
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="7" height="18" rx="1" />
+                  <rect x="14" y="3" width="7" height="18" rx="1" />
+                </svg>
               </button>
             </div>
-            <span className="text-xs text-gray-400 whitespace-nowrap">
-              Showing {filtered.length} of {customers.length}
-            </span>
           </div>
         </div>
       )}
@@ -651,8 +779,71 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Board view */}
+      {!loading && !error && viewMode === 'board' && (
+        <div className="flex gap-4 mb-4 items-start">
+          {BOARD_COLUMNS.map(col => {
+            const colCustomers = filtered.filter(c => getOutreach(c.id) === col.key)
+            const isTarget = dragOverCol === col.key
+            return (
+              <div
+                key={col.key}
+                className="flex-1 min-w-0"
+                onDragOver={e => { e.preventDefault(); setDragOverCol(col.key) }}
+                onDragLeave={e => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCol(null)
+                }}
+                onDrop={e => {
+                  e.preventDefault()
+                  if (dragId) updateOutreach(dragId, col.key)
+                  setDragId(null)
+                  setDragOverCol(null)
+                }}
+              >
+                {/* Column header */}
+                <div className="flex items-center justify-between px-1 mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${col.headerDot}`} />
+                    <span className="text-xs font-semibold text-gray-700">{col.label}</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-gray-400 tabular-nums">{colCustomers.length}</span>
+                </div>
+
+                {/* Drop zone */}
+                <div className={`min-h-96 rounded-xl p-2 space-y-2 transition-all ${
+                  isTarget
+                    ? `bg-white ring-2 ring-dashed ${col.dropRing}`
+                    : 'bg-gray-50/60'
+                }`}>
+                  {colCustomers.map(c => (
+                    <BoardCard
+                      key={c.id}
+                      c={c}
+                      hasNote={!!hasNotes[c.id]}
+                      followUpDate={followUps[c.id]}
+                      onDragStart={() => setDragId(c.id)}
+                      onClick={() => navigate(`/customers/${c.id}`)}
+                    />
+                  ))}
+                  {colCustomers.length === 0 && (
+                    <div className={`flex flex-col items-center justify-center h-24 rounded-lg gap-1.5 transition-colors ${
+                      isTarget ? 'bg-white/60' : 'border border-dashed border-gray-200'
+                    }`}>
+                      <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                      <span className="text-[10px] text-gray-300">Drag cards here</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Table */}
-      {!loading && !error && (
+      {!loading && !error && viewMode === 'table' && (
         <div className="bg-white rounded-xl border border-gray-100 overflow-hidden mb-4">
           <table className="w-full text-sm">
             <thead>
